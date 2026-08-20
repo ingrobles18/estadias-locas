@@ -1,0 +1,196 @@
+{
+  "usuarios_sistema": [
+    {
+      "id": 1,
+      "nombre": "Caja General",
+      "usuario": "caja",
+      "password": "caja123",
+      "rol": "caja"
+    },
+    {
+      "id": 2,
+      "nombre": "Finanzas INMUVI",
+      "usuario": "finanzas",
+      "password": "finanzas123",
+      "rol": "finanzas"
+    },
+    {
+      "id": 3,
+      "nombre": "Secretaria Tecnica",
+      "usuario": "secretaria",
+      "password": "secretaria123",
+      "rol": "secretaria"
+    }
+  ],
+  "beneficiarios": [
+    {
+      "id": 1,
+      "folio": "INV-2026-001",
+      "nombre": "Juan Perez Lopez",
+      "curp": "PELJ900101HDFRPN09",
+      "domicilio": "Fracc. Las Palmas",
+      "telefono": "667-123-4567",
+      "colonia_fraccionamiento": "Las Palmas",
+      "lote": "12",
+      "manzana": "B",
+      "superficie": 96,
+      "concepto": "Vivienda social",
+      "monto_total_credito": 180000,
+      "mensualidad": 2500,
+      "fecha_inicio": "2025-03-01",
+      "fecha_entrega": "2025-02-15",
+      "enganche_total": 10000,
+      "estatus": "activo"
+    },
+    {
+      "id": 2,
+      "folio": "INV-2026-002",
+      "nombre": "Maria Hernandez Soto",
+      "curp": "HESM850602MDFRRT03",
+      "domicilio": "Col. Nueva Esperanza",
+      "telefono": "667-987-6543",
+      "colonia_fraccionamiento": "Nueva Esperanza",
+      "lote": "08",
+      "manzana": "D",
+      "superficie": 105,
+      "concepto": "Terreno con servicios",
+      "monto_total_credito": 145000,
+      "mensualidad": 2100,
+      "fecha_inicio": "2025-06-01",
+      "fecha_entrega": "2025-05-20",
+      "enganche_total": 8000,
+      "estatus": "activo"
+    },
+    {
+      "id": 3,
+      "folio": "05820000000756",
+      "nombre": "Delgado Delgado Efren",
+      "curp": "quitar",
+      "domicilio": "Marte #111",
+      "telefono": "618 290 31 62",
+      "colonia_fraccionamiento": "fracc. Puerta del sol",
+      "lote": "lote 10",
+      "manzana": "manzana T",
+      "superficie": 96,
+      "concepto": "anticipo ",
+      "monto_total_credito": 11500032,
+      "mensualidad": 48,
+      "fecha_inicio": "2026-08-20",
+      "fecha_entrega": "2026-08-20",
+      "enganche_total": 10,
+      "estatus": "baja"
+    }
+  ],
+  "pagos": [
+    {
+      "id": 1,
+      "beneficiario_id": 1,
+      "monto_pagado": 2500,
+      "fecha_pago": "2025-03-05",
+      "mes_correspondiente": 1,
+      "cajero_id": 1,
+      "comprobante": "REC-0001"
+    },
+    {
+      "id": 2,
+      "beneficiario_id": 1,
+      "monto_pagado": 2500,
+      "fecha_pago": "2025-04-04",
+      "mes_correspondiente": 2,
+      "cajero_id": 1,
+      "comprobante": "REC-0002"
+    },
+    {
+      "id": 3,
+      "beneficiario_id": 2,
+      "monto_pagado": 2100,
+      "fecha_pago": "2025-06-07",
+      "mes_correspondiente": 1,
+      "cajero_id": 1,
+      "comprobante": "REC-0003"
+    },
+    {
+      "id": 4,
+      "beneficiario_id": 1,
+      "monto_pagado": 2500,
+      "fecha_pago": "2026-08-20",
+      "mes_correspondiente": 3,
+      "cajero_id": 1,
+      "comprobante": "REC-0004"
+    },
+    {
+      "id": 5,
+      "beneficiario_id": 1,
+      "monto_pagado": 25000,
+      "fecha_pago": "2026-08-20",
+      "mes_correspondiente": 4,
+      "cajero_id": 1,
+      "comprobante": "REC-0005"
+    },
+    {
+      "id": 6,
+      "beneficiario_id": 1,
+      "monto_pagado": 2500,
+      "fecha_pago": "2026-08-20",
+      "mes_correspondiente": 14,
+      "cajero_id": 1,
+      "comprobante": "REC-0006"
+    },
+    {
+      "id": 7,
+      "beneficiario_id": 1,
+      "monto_pagado": 2500,
+      "fecha_pago": "2026-08-20",
+      "mes_correspondiente": 15,
+      "cajero_id": 1,
+      "comprobante": "REC-0007"
+    },
+    {
+      "id": 8,
+      "beneficiario_id": 1,
+      "monto_pagado": 2500,
+      "fecha_pago": "2026-08-20",
+      "mes_correspondiente": 16,
+      "cajero_id": 1,
+      "comprobante": "REC-0008"
+    },
+    {
+      "id": 9,
+      "beneficiario_id": 3,
+      "monto_pagado": 500030,
+      "fecha_pago": "2026-08-20",
+      "mes_correspondiente": 1,
+      "cajero_id": 1,
+      "comprobante": "REC-0009"
+    },
+    {
+      "id": 10,
+      "beneficiario_id": 3,
+      "monto_pagado": 1100000,
+      "fecha_pago": "2026-08-20",
+      "mes_correspondiente": 10418,
+      "cajero_id": 1,
+      "comprobante": "REC-0010"
+    },
+    {
+      "id": 11,
+      "beneficiario_id": 3,
+      "monto_pagado": 1100000,
+      "fecha_pago": "2026-08-20",
+      "mes_correspondiente": 10418,
+      "cajero_id": 1,
+      "comprobante": "REC-0011"
+    }
+  ],
+  "mensualidades": [],
+  "consultas": [
+    {
+      "id": 1,
+      "beneficiario_id": 1,
+      "usuario_id": 1,
+      "area": "caja",
+      "motivo": "consulta",
+      "fecha": "2026-08-20T17:52:48.271Z"
+    }
+  ]
+}
