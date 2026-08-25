@@ -1,6 +1,7 @@
 import {
   enrichBeneficiary,
   findBeneficiary,
+  formatPhone,
   listBeneficiaries,
   nextId,
   readJson,
@@ -30,7 +31,7 @@ export async function handleCaja(req, res, url, db) {
       nombre: body.nombre,
       curp: body.curp || "",
       domicilio: body.domicilio || "",
-      telefono: body.telefono || "",
+      telefono: formatPhone(body.telefono),
       colonia_fraccionamiento: body.colonia_fraccionamiento || "",
       lote: body.lote || "",
       manzana: body.manzana || "",
@@ -56,6 +57,7 @@ export async function handleCaja(req, res, url, db) {
       ...db.beneficiarios[index],
       ...body,
       id: db.beneficiarios[index].id,
+      telefono: body.telefono === undefined ? db.beneficiarios[index].telefono : formatPhone(body.telefono),
       monto_total_credito: Number(body.monto_total_credito ?? db.beneficiarios[index].monto_total_credito),
       mensualidad: Number(body.mensualidad ?? db.beneficiarios[index].mensualidad),
       superficie: Number(body.superficie ?? db.beneficiarios[index].superficie),
@@ -66,15 +68,28 @@ export async function handleCaja(req, res, url, db) {
     return send(res, 200, enrichBeneficiary(db, db.beneficiarios[index]));
   }
 
+  if (beneficiaryMatch && req.method === "DELETE") {
+    const id = Number(beneficiaryMatch[1]);
+    const index = db.beneficiarios.findIndex((row) => row.id === id);
+    if (index === -1) return send(res, 404, { message: "Beneficiario no encontrado" });
+    db.beneficiarios.splice(index, 1);
+    db.pagos = db.pagos.filter((payment) => payment.beneficiario_id !== id);
+    db.consultas = db.consultas.filter((consultation) => consultation.beneficiario_id !== id);
+    await writeDb(db);
+    return send(res, 200, { ok: true });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/caja/pagos") {
     const body = await readJson(req);
     const beneficiary = findBeneficiary(db, body.beneficiario_id);
     if (!beneficiary) return send(res, 404, { message: "Beneficiario no encontrado" });
+    const amount = Number(body.monto_pagado);
+    if (!Number.isFinite(amount) || amount <= 0) return send(res, 400, { message: "El monto debe ser mayor a cero" });
     const id = nextId(db.pagos);
     db.pagos.push({
       id,
       beneficiario_id: Number(body.beneficiario_id),
-      monto_pagado: Number(body.monto_pagado),
+      monto_pagado: Number(amount.toFixed(2)),
       fecha_pago: body.fecha_pago,
       mes_correspondiente: Number(body.mes_correspondiente),
       cajero_id: Number(body.cajero_id),

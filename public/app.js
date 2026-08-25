@@ -17,7 +17,6 @@ const state = {
 const fields = {
   folio: "",
   nombre: "",
-  curp: "",
   domicilio: "",
   telefono: "",
   colonia_fraccionamiento: "",
@@ -38,6 +37,23 @@ function money(value) {
   return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(Number(value || 0));
 }
 
+function phone(value) {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 10);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  if (digits.length <= 8) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 8)}-${digits.slice(8)}`;
+}
+
+function date(value) {
+  if (!value) return "Sin fecha";
+  return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
+}
+
+function paymentMonth(value) {
+  return String(value || "").slice(5, 7) || "Sin mes";
+}
+
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
@@ -55,6 +71,15 @@ async function api(path, options = {}) {
     ...options
   });
   const data = await response.json();
+  if (!response.ok && response.status === 404 && base !== "/api") {
+    const fallbackResponse = await fetch(`/api${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...options
+    });
+    const fallbackData = await fallbackResponse.json();
+    if (!fallbackResponse.ok) throw new Error(fallbackData.message || "Error de comunicacion");
+    return fallbackData;
+  }
   if (!response.ok) throw new Error(data.message || "Error de comunicacion");
   return data;
 }
@@ -128,66 +153,139 @@ function info(label, value, danger = false) {
   return `<div class="info ${danger ? "danger" : ""}"><span>${label}</span><b>${esc(value)}</b></div>`;
 }
 
+function renderLateDates(item) {
+  const dates = item.resumen.fechas_atrasadas || [];
+  return `
+    <section class="late-dates">
+      <h3>Fechas atrasadas</h3>
+      <div class="months">
+        ${dates.map((dueDate) => `<span class="atrasado">${date(dueDate)}</span>`).join("") || `<span>Sin fechas atrasadas</span>`}
+      </div>
+    </section>
+  `;
+}
+
 function renderList() {
+  const canCreate = state.user?.rol === "caja" && state.view === "caja";
+  const groups = [
+    {
+      title: "Personas que deben",
+      rows: state.rows.filter((row) => row.estatus !== "baja" && row.resumen.saldo_pendiente > 0),
+      empty: "Sin personas con adeudo"
+    },
+    {
+      title: "Ya terminaron de pagar",
+      rows: state.rows.filter((row) => row.estatus !== "baja" && row.resumen.saldo_pendiente <= 0),
+      empty: "Sin expedientes liquidados"
+    },
+    {
+      title: "Dados de baja",
+      rows: state.rows.filter((row) => row.estatus === "baja"),
+      empty: "Sin personas dadas de baja"
+    }
+  ];
+
+  const renderRow = (row) => {
+    const isPaid = row.estatus !== "baja" && row.resumen.saldo_pendiente <= 0;
+    return `
+      <button data-action="select" data-id="${row.id}" class="${state.selected?.id === row.id ? "selected" : ""}">
+        <b>
+          ${esc(row.folio)}
+          ${row.estatus === "baja" ? `<em>Baja</em>` : isPaid ? `<em class="paid">Liquidado</em>` : ""}
+        </b>
+        <span>${esc(row.nombre)}</span>
+        <small>${isPaid ? "Pago terminado" : `${money(row.resumen.saldo_pendiente)} pendiente`}</small>
+      </button>
+    `;
+  };
+
   return `
     <section class="list">
       <h3>Beneficiarios</h3>
-      ${state.rows.map((row) => `
-        <button data-action="select" data-id="${row.id}" class="${state.selected?.id === row.id ? "selected" : ""}">
-          <b>${esc(row.folio)}</b>
-          <span>${esc(row.nombre)}</span>
-          <small>${money(row.resumen.saldo_pendiente)} pendiente</small>
-        </button>
+      ${canCreate ? `<button class="new-beneficiary-button" data-action="toggle-create">Nuevo beneficiario</button>` : ""}
+      ${groups.map((group) => `
+        <div class="list-group">
+          <div class="list-group-title"><span>${group.title}</span><b>${group.rows.length}</b></div>
+          ${group.rows.map(renderRow).join("") || `<p class="list-empty">${group.empty}</p>`}
+        </div>
       `).join("")}
     </section>
   `;
 }
 
-function renderHistory(payments) {
+function renderHistory(item) {
+  const rows = (item.mensualidades || [])
+    .filter((month) => month.estatus === "pagado" || month.estatus === "atrasado")
+    .slice()
+    .sort((a, b) => new Date(b.fecha_vencimiento) - new Date(a.fecha_vencimiento));
+
   return `
     <section class="history">
       <h3>Historial de pagos</h3>
       <div class="table">
         <div class="head"><span>Fecha</span><span>Mes</span><span>Comprobante</span><span>Monto</span></div>
-        ${payments.map((payment) => `
-          <div class="row">
-            <span>${esc(payment.fecha_pago)}</span>
-            <span>${esc(payment.mes_correspondiente)}</span>
-            <span>${esc(payment.comprobante)}</span>
-            <b>${money(payment.monto_pagado)}</b>
+        ${rows.map((month) => {
+          const payment = month.pago;
+          return `
+          <div class="row ${month.estatus}">
+            <span>${esc(payment?.fecha_pago || month.fecha_vencimiento)}</span>
+            <span>${paymentMonth(month.fecha_vencimiento)}</span>
+            <span>${payment ? esc(payment.comprobante) : "Atrasado"}</span>
+            <b>${money(payment?.monto_pagado || month.monto_esperado)}</b>
           </div>
-        `).join("") || `<div class="row"><span>Sin pagos registrados</span><span></span><span></span><b>${money(0)}</b></div>`}
+        `;
+        }).join("") || `<div class="row"><span>Sin pagos registrados</span><span></span><span></span><b>${money(0)}</b></div>`}
       </div>
     </section>
   `;
 }
 
 function renderProfile(item) {
+  const isPaid = item.estatus !== "baja" && item.resumen.saldo_pendiente <= 0;
   return `
     <article class="profile">
       <div class="profile-head">
         <div>
           <p>${esc(item.folio)}</p>
           <h2>${esc(item.nombre)}</h2>
+          ${item.estatus === "baja" ? `<strong class="status-baja">Baja</strong>` : ""}
+          ${isPaid ? `<strong class="status-paid">Liquidado</strong>` : ""}
+          <small>Inicio: ${date(item.fecha_inicio)} - Superficie ${esc(item.superficie || 0)} m2</small>
           <span>${esc(item.domicilio)} · Lote ${esc(item.lote)}, Manzana ${esc(item.manzana)}</span>
         </div>
         <button class="secondary" data-action="checkin">Check-in</button>
       </div>
       <div class="progress-label">
-        <span>${money(item.resumen.total_pagado)} pagado de ${money(item.monto_total_credito)}</span>
+        <span>${money(item.resumen.total_pagado)} pagado de ${money(item.monto_total_credito)} costo total</span>
         <b>${item.resumen.progreso}%</b>
       </div>
       <div class="progress"><div style="width:${Math.min(item.resumen.progreso, 100)}%"></div></div>
       <div class="info-grid">
         ${info("Mensualidad", money(item.mensualidad))}
         ${info("Va en mensualidad", `${item.resumen.mensualidad_actual} de ${item.resumen.mensualidades_totales}`)}
+        ${info("Costo total del terreno", money(item.monto_total_credito))}
         ${info("Falta por pagar", money(item.resumen.saldo_pendiente))}
         ${info("Atrasadas", item.resumen.mensualidades_atrasadas, item.resumen.mensualidades_atrasadas > 0)}
-        ${info("CURP", item.curp || "Sin dato")}
-        ${info("Telefono", item.telefono || "Sin dato")}
+        ${info("Adeudo atrasado", money(item.resumen.adeudo_atrasado), item.resumen.adeudo_atrasado > 0)}
+        ${info("Telefono", phone(item.telefono) || "Sin dato")}
       </div>
-      ${renderHistory(item.pagos)}
+      ${renderLateDates(item)}
+      ${renderHistory(item)}
     </article>
+  `;
+}
+
+function renderFinanzas(item) {
+  return `
+    <section class="observations panel">
+      <h3>Observaciones de Finanzas</h3>
+      <form id="financeNotesForm">
+        <label>Observaciones
+          <textarea name="observaciones_finanzas" rows="5" placeholder="Escribe observaciones del expediente">${esc(item.observaciones_finanzas || "")}</textarea>
+        </label>
+        <button>Guardar observaciones</button>
+      </form>
+    </section>
   `;
 }
 
@@ -197,7 +295,7 @@ function renderCaja(item) {
     <section class="actions">
       <form class="panel" id="paymentForm">
         <h3>Registrar abono</h3>
-        <label>Monto<input name="monto_pagado" type="number" value="${item.mensualidad}" /></label>
+        <label>Monto<input name="monto_pagado" type="number" step="0.01" min="0.01" value="${Number(item.mensualidad || 0).toFixed(2)}" /></label>
         <label>Fecha<input name="fecha_pago" type="date" value="${new Date().toISOString().slice(0, 10)}" /></label>
         <label>Mensualidad<input name="mes_correspondiente" type="number" value="${nextMonth}" /></label>
         <label>Comprobante<input name="comprobante" placeholder="REC-0004" /></label>
@@ -205,8 +303,9 @@ function renderCaja(item) {
       </form>
       <form class="panel" id="editForm">
         <h3>Corregir expediente</h3>
-        <label>Monto total<input name="monto_total_credito" type="number" value="${item.monto_total_credito}" /></label>
-        <label>Mensualidad<input name="mensualidad" type="number" value="${item.mensualidad}" /></label>
+        <label>Monto total<input name="monto_total_credito" type="number" step="0.01" min="0" value="${item.monto_total_credito}" /></label>
+        <label>Mensualidad<input name="mensualidad" type="number" step="0.01" min="0" value="${item.mensualidad}" /></label>
+        <label>Telefono<input name="telefono" type="tel" inputmode="numeric" maxlength="13" value="${esc(phone(item.telefono))}" /></label>
         <label>Estatus
           <select name="estatus">
             <option value="activo" ${item.estatus === "activo" ? "selected" : ""}>Activo</option>
@@ -214,11 +313,17 @@ function renderCaja(item) {
           </select>
         </label>
         <button>Aplicar cambios</button>
+        <button type="button" class="danger-button" data-action="delete-beneficiary">Eliminar persona</button>
       </form>
     </section>
+  `;
+}
+
+function renderCreateSection(expanded = false) {
+  return `
     <section class="create">
       <button data-action="toggle-create">Nuevo beneficiario</button>
-      <div id="createHolder"></div>
+      <div id="createHolder">${expanded ? renderCreateForm() : ""}</div>
     </section>
   `;
 }
@@ -230,8 +335,10 @@ function renderCreateForm() {
         <label>${key.replaceAll("_", " ")}
           <input
             name="${key}"
-            type="${key.includes("fecha") ? "date" : ["monto_total_credito", "mensualidad", "enganche_total", "superficie"].includes(key) ? "number" : "text"}"
+            type="${key === "telefono" ? "tel" : key.includes("fecha") ? "date" : ["monto_total_credito", "mensualidad", "enganche_total", "superficie"].includes(key) ? "number" : "text"}"
             value="${esc(fields[key])}"
+            ${key === "telefono" ? `inputmode="numeric" maxlength="13"` : ""}
+            ${["monto_total_credito", "mensualidad", "enganche_total", "superficie"].includes(key) ? `step="0.01" min="0"` : ""}
             ${["folio", "nombre", "monto_total_credito", "mensualidad", "fecha_inicio"].includes(key) ? "required" : ""}
           />
         </label>
@@ -256,6 +363,27 @@ function renderCobranza(item) {
       </div>
     </section>
   `;
+}
+
+function attachCreateForm() {
+  const createForm = document.getElementById("createForm");
+  if (!createForm) return;
+
+  createForm.querySelector("input[name='telefono']")?.addEventListener("input", (event) => {
+    event.currentTarget.value = phone(event.currentTarget.value);
+  });
+
+  createForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const body = Object.fromEntries(new FormData(event.currentTarget));
+    const row = await api("/beneficiarios", {
+      method: "POST",
+      body: JSON.stringify({ ...body, rol: state.user.rol })
+    });
+    notify("Beneficiario creado");
+    state.selected = row;
+    await loadRows("");
+  });
 }
 
 function attachHandlers() {
@@ -322,18 +450,35 @@ function attachHandlers() {
     await refreshSelected();
   });
 
-  document.querySelector("[data-action='toggle-create']")?.addEventListener("click", () => {
+  document.querySelector("[data-action='delete-beneficiary']")?.addEventListener("click", async () => {
+    if (!window.confirm(`Eliminar a ${state.selected.nombre} y todo su historial de pagos?`)) return;
+    await api(`/beneficiarios/${state.selected.id}`, { method: "DELETE" });
+    notify("Persona eliminada");
+    state.selected = null;
+    await loadRows(state.query);
+  });
+
+  document.getElementById("financeNotesForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const body = Object.fromEntries(new FormData(event.currentTarget));
+    await api(`/beneficiarios/${state.selected.id}/observaciones`, {
+      method: "PATCH",
+      body: JSON.stringify({ ...body, usuario_id: state.user.id })
+    });
+    notify("Observaciones guardadas");
+    await refreshSelected();
+  });
+
+  document.querySelectorAll("[data-action='toggle-create']").forEach((button) => button.addEventListener("click", () => {
     document.getElementById("createHolder").innerHTML = renderCreateForm();
-    document.getElementById("createForm").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const body = Object.fromEntries(new FormData(event.currentTarget));
-      const row = await api("/beneficiarios", {
-        method: "POST",
-        body: JSON.stringify({ ...body, rol: state.user.rol })
-      });
-      notify("Beneficiario creado");
-      state.selected = row;
-      await loadRows("");
+    attachCreateForm();
+  }));
+
+  attachCreateForm();
+
+  document.querySelectorAll("input[name='telefono']").forEach((input) => {
+    input.addEventListener("input", () => {
+      input.value = phone(input.value);
     });
   });
 }
@@ -345,6 +490,7 @@ function render() {
   }
 
   const isCaja = state.user.rol === "caja";
+  const isFinanzas = state.user.rol === "finanzas";
   if (portal.role && state.user.rol !== portal.role) {
     localStorage.removeItem("inmuvi-user");
     state.user = null;
@@ -352,10 +498,17 @@ function render() {
     return;
   }
   if (!portal.views.includes(state.view)) state.view = portal.views[0] || "consulta";
+  const activeRows = state.rows.filter((row) => row.estatus !== "baja");
+  const debtRows = activeRows.filter((row) => row.resumen.saldo_pendiente > 0);
+  const paidRows = activeRows.filter((row) => row.resumen.saldo_pendiente <= 0);
+  const inactiveRows = state.rows.filter((row) => row.estatus === "baja");
   const totals = {
-    cartera: state.rows.reduce((sum, row) => sum + row.monto_total_credito, 0),
-    pagado: state.rows.reduce((sum, row) => sum + row.resumen.total_pagado, 0),
-    atrasos: state.rows.reduce((sum, row) => sum + row.resumen.mensualidades_atrasadas, 0)
+    cartera: activeRows.reduce((sum, row) => sum + row.monto_total_credito, 0),
+    pagado: activeRows.reduce((sum, row) => sum + row.resumen.total_pagado, 0),
+    atrasos: activeRows.reduce((sum, row) => sum + row.resumen.mensualidades_atrasadas, 0),
+    deudores: debtRows.length,
+    liquidados: paidRows.length,
+    bajas: inactiveRows.length
   };
 
   root.innerHTML = `
@@ -381,14 +534,17 @@ function render() {
         </header>
         <section class="metrics">
           ${metric("Cartera activa", money(totals.cartera))}
-          ${metric("Abonado", money(totals.pagado))}
-          ${metric("Mensualidades atrasadas", totals.atrasos)}
+          ${metric("Personas que deben", totals.deudores)}
+          ${metric("Liquidados", totals.liquidados)}
+          ${metric("Dados de baja", totals.bajas)}
         </section>
         <section class="grid">
           ${renderList()}
           <section class="detail">
             ${state.selected ? renderProfile(state.selected) : `<div class="empty">No hay beneficiarios para mostrar.</div>`}
             ${state.selected && state.view === "caja" && isCaja ? renderCaja(state.selected) : ""}
+            ${state.view === "caja" && isCaja ? renderCreateSection(!state.selected) : ""}
+            ${state.selected && isFinanzas ? renderFinanzas(state.selected) : ""}
             ${state.selected && state.view === "cobranza" ? renderCobranza(state.selected) : ""}
           </section>
         </section>

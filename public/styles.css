@@ -8,6 +8,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 button, input, select { font: inherit; }
+textarea { font: inherit; resize: vertical; }
 button { cursor: pointer; }
 
 .app-shell {
@@ -79,8 +80,13 @@ h1, h2, h3 { margin: 0; }
   font-weight: 800;
 }
 .secondary { background: #e8f4f1; color: #176a5d; }
+.danger-button {
+  background: #fff0ed;
+  color: #a13224;
+  border: 1px solid #f2c1b8;
+}
 
-.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
 .metric, .list, .detail, .panel, .create-form, .login-box, .cobranza {
   background: white;
   border: 1px solid #dce5e9;
@@ -104,11 +110,40 @@ h1, h2, h3 { margin: 0; }
   gap: 4px;
 }
 .list button.selected { border-color: #1e9f89; background: #edf9f6; }
+.list .new-beneficiary-button {
+  min-height: 44px;
+  margin-bottom: 14px;
+  background: #1e6f63;
+  color: white;
+  font-weight: 900;
+  text-align: center;
+  place-items: center;
+}
+.list b { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.list-group + .list-group { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e0e8ec; }
+.list-group-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; color: #40505a; font-weight: 900; }
+.list-group-title b { min-width: 28px; justify-content: center; border-radius: 999px; background: #eef4f6; padding: 3px 8px; font-size: .78rem; }
+.list-empty { margin: 0; padding: 10px 12px; color: #7a8b95; font-size: .86rem; font-weight: 800; }
+.list em, .status-baja, .status-paid {
+  border-radius: 999px;
+  background: #fff0ed;
+  color: #a13224;
+  font-size: .72rem;
+  font-style: normal;
+  font-weight: 900;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+.list em.paid, .status-paid {
+  background: #e8f4f1;
+  color: #176a5d;
+}
 
 .detail { padding: 18px; }
 .profile-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .profile-head p { color: #6d7b86; margin: 0 0 4px; font-weight: 900; }
 .profile-head span { color: #62717a; }
+.profile-head small { display: block; margin: 5px 0; color: #7a8b95; font-weight: 800; }
 .progress-label { display: flex; justify-content: space-between; margin: 22px 0 8px; color: #40505a; }
 .progress { height: 12px; border-radius: 999px; background: #e4ebef; overflow: hidden; }
 .progress div { height: 100%; background: linear-gradient(90deg, #1e9f89, #246f9e); }
@@ -117,17 +152,21 @@ h1, h2, h3 { margin: 0; }
 .info b { overflow-wrap: anywhere; }
 .info.danger b { color: #b23b2d; }
 
-.history, .actions, .create, .cobranza { margin-top: 18px; }
+.history, .actions, .create, .cobranza, .late-dates, .observations { margin-top: 18px; }
 .table { border: 1px solid #e0e8ec; border-radius: 8px; overflow: hidden; }
 .head, .row { display: grid; grid-template-columns: 1fr 80px 1fr 130px; gap: 10px; padding: 11px 12px; align-items: center; }
 .head { background: #f4f7f8; font-weight: 900; color: #52616b; }
 .row + .row { border-top: 1px solid #e0e8ec; }
+.row.atrasado { background: #fff7f5; color: #8f2d22; }
+.row.atrasado b { color: #a13224; }
 
 .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .panel, .create-form { padding: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .panel h3, .panel button, .create-form button { grid-column: 1 / -1; }
 label { display: grid; gap: 6px; font-size: .82rem; color: #52616b; font-weight: 900; text-transform: capitalize; }
-input, select { border: 1px solid #cfdbe1; border-radius: 8px; min-height: 40px; padding: 9px 10px; color: #17212b; background: white; }
+input, select, textarea { border: 1px solid #cfdbe1; border-radius: 8px; min-height: 40px; padding: 9px 10px; color: #17212b; background: white; }
+.observations, .observations form { display: grid; gap: 12px; }
+.observations label, .observations button { grid-column: 1 / -1; }
 .create > button { width: 100%; }
 .create-form { margin-top: 12px; }
 

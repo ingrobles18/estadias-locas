@@ -1,4 +1,4 @@
-import { enrichBeneficiary, findBeneficiary, listBeneficiaries, registerConsultation, send } from "./utils.js";
+import { enrichBeneficiary, findBeneficiary, listBeneficiaries, readJson, registerConsultation, send, writeDb } from "./utils.js";
 
 export async function handleFinanzas(req, res, url, db) {
   if (req.method === "GET" && url.pathname === "/api/finanzas/beneficiarios") {
@@ -10,6 +10,18 @@ export async function handleFinanzas(req, res, url, db) {
     const beneficiary = findBeneficiary(db, beneficiaryMatch[1]);
     if (!beneficiary) return send(res, 404, { message: "Beneficiario no encontrado" });
     return send(res, 200, enrichBeneficiary(db, beneficiary));
+  }
+
+  const observationsMatch = url.pathname.match(/^\/api\/finanzas\/beneficiarios\/(\d+)\/observaciones$/);
+  if (observationsMatch && req.method === "PATCH") {
+    const body = await readJson(req);
+    const index = db.beneficiarios.findIndex((row) => row.id === Number(observationsMatch[1]));
+    if (index === -1) return send(res, 404, { message: "Beneficiario no encontrado" });
+    db.beneficiarios[index].observaciones_finanzas = body.observaciones_finanzas || "";
+    db.beneficiarios[index].fecha_observacion_finanzas = new Date().toISOString();
+    db.beneficiarios[index].usuario_observacion_finanzas_id = Number(body.usuario_id);
+    await writeDb(db);
+    return send(res, 200, enrichBeneficiary(db, db.beneficiarios[index]));
   }
 
   if (req.method === "GET" && url.pathname === "/api/finanzas/resumen") {
