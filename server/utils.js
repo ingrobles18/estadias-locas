@@ -122,9 +122,18 @@ export function send(res, status, data, contentType = "application/json") {
 
 export function listBeneficiaries(db, queryText, options = {}) {
   const query = String(queryText || "").toLowerCase().trim();
+  const matchesQuery = (row) => [
+    row.folio,
+    row.nombre,
+    row.domicilio,
+    row.colonia_fraccionamiento,
+    row.lote,
+    row.manzana
+  ].some((value) => String(value || "").toLowerCase().includes(query));
+
   return db.beneficiarios
     .filter((row) => options.includeInactive !== false || row.estatus !== "baja")
-    .filter((row) => !query || row.folio.toLowerCase().includes(query) || row.nombre.toLowerCase().includes(query))
+    .filter((row) => !query || matchesQuery(row))
     .map((row) => enrichBeneficiary(db, row));
 }
 

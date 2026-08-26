@@ -61,6 +61,15 @@
       "mes_correspondiente": 2,
       "cajero_id": 1,
       "comprobante": "REC-0002"
+    },
+    {
+      "id": 3,
+      "beneficiario_id": 1,
+      "monto_pagado": 2100,
+      "fecha_pago": "2026-09-26",
+      "mes_correspondiente": 3,
+      "cajero_id": 1,
+      "comprobante": "REC-0003"
     }
   ],
   "mensualidades": [],

@@ -24,6 +24,12 @@ async function handleApi(req, res, url) {
     return send(res, 200, { user: publicUser(user) });
   }
 
+  if (req.method === "GET" && url.pathname === "/api/maps/config") {
+    return send(res, 200, {
+      googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || ""
+    });
+  }
+
   if (url.pathname.startsWith("/api/caja/")) return await handleCaja(req, res, url, db);
   if (url.pathname.startsWith("/api/finanzas/")) return await handleFinanzas(req, res, url, db);
   if (url.pathname.startsWith("/api/secretaria/")) return await handleSecretaria(req, res, url, db);
