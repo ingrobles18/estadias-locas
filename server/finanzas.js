@@ -1,4 +1,4 @@
-import { enrichBeneficiary, findBeneficiary, listBeneficiaries, readJson, registerConsultation, send, writeDb } from "./utils.js";
+import { enrichBeneficiary, findBeneficiary, listBeneficiaries, readJson, registerConsultation, saveFinanceObservations, send } from "./utils.js";
 
 export async function handleFinanzas(req, res, url, db) {
   if (req.method === "GET" && url.pathname === "/api/finanzas/beneficiarios") {
@@ -15,13 +15,10 @@ export async function handleFinanzas(req, res, url, db) {
   const observationsMatch = url.pathname.match(/^\/api\/finanzas\/beneficiarios\/(\d+)\/observaciones$/);
   if (observationsMatch && req.method === "PATCH") {
     const body = await readJson(req);
-    const index = db.beneficiarios.findIndex((row) => row.id === Number(observationsMatch[1]));
-    if (index === -1) return send(res, 404, { message: "Beneficiario no encontrado" });
-    db.beneficiarios[index].observaciones_finanzas = body.observaciones_finanzas || "";
-    db.beneficiarios[index].fecha_observacion_finanzas = new Date().toISOString();
-    db.beneficiarios[index].usuario_observacion_finanzas_id = Number(body.usuario_id);
-    await writeDb(db);
-    return send(res, 200, enrichBeneficiary(db, db.beneficiarios[index]));
+    const beneficiary = findBeneficiary(db, observationsMatch[1]);
+    if (!beneficiary) return send(res, 404, { message: "Beneficiario no encontrado" });
+    await saveFinanceObservations(beneficiary, body);
+    return send(res, 200, { ...enrichBeneficiary(db, beneficiary), observaciones_finanzas: body.observaciones_finanzas || "" });
   }
 
   if (req.method === "GET" && url.pathname === "/api/finanzas/resumen") {
@@ -39,7 +36,10 @@ export async function handleFinanzas(req, res, url, db) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/finanzas/consultas") {
-    const checkin = await registerConsultation(req, db, "finanzas");
+    const body = await readJson(req);
+    const beneficiary = findBeneficiary(db, body.beneficiario_id);
+    if (!beneficiary) return send(res, 404, { message: "Beneficiario no encontrado" });
+    const checkin = await registerConsultation(body, beneficiary, "finanzas");
     return send(res, 201, checkin);
   }
 

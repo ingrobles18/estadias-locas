@@ -1,4 +1,4 @@
-import { enrichBeneficiary, findBeneficiary, listBeneficiaries, registerConsultation, send } from "./utils.js";
+import { enrichBeneficiary, findBeneficiary, listBeneficiaries, readJson, registerConsultation, send } from "./utils.js";
 
 export async function handleSecretaria(req, res, url, db) {
   if (req.method === "GET" && url.pathname === "/api/secretaria/beneficiarios") {
@@ -33,7 +33,10 @@ export async function handleSecretaria(req, res, url, db) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/secretaria/consultas") {
-    const checkin = await registerConsultation(req, db, "secretaria");
+    const body = await readJson(req);
+    const beneficiary = findBeneficiary(db, body.beneficiario_id);
+    if (!beneficiary) return send(res, 404, { message: "Beneficiario no encontrado" });
+    const checkin = await registerConsultation(body, beneficiary, "secretaria");
     return send(res, 201, checkin);
   }
 

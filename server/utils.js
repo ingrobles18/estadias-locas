@@ -1,20 +1,7 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import supabase from "./supabase.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, "db.json");
-
-export async function readDb() {
-  return JSON.parse(await fs.readFile(dbPath, "utf8"));
-}
-
-export async function writeDb(db) {
-  await fs.writeFile(dbPath, JSON.stringify(db, null, 2));
-}
-
-export function nextId(rows) {
-  return rows.length ? Math.max(...rows.map((row) => row.id)) + 1 : 1;
+function throwDbError(error, context) {
+  if (error) throw new Error(`${context}: ${error.message}`);
 }
 
 export function formatPhone(value) {
@@ -55,13 +42,12 @@ export function enrichBeneficiary(db, beneficiary) {
   const montoTotal = Number(beneficiary.monto_total_credito || 0);
   const mensualidad = Number(beneficiary.mensualidad || 0);
   const saldo = Math.max(montoTotal - totalPagado, 0);
-  const mesesTotales = mensualidad > 0 ? Math.ceil(montoTotal / mensualidad) : 0;
+  const mesesTotales = Number(beneficiary.numero_mensualidades) || (mensualidad > 0 ? Math.ceil(montoTotal / mensualidad) : 0);
   const paymentsByMonth = new Map(pagos.map((payment) => [monthKey(payment.fecha_pago), payment]));
   const paidMonthKeys = new Set(paymentsByMonth.keys());
   const mesesTranscurridos = monthsBetween(beneficiary.fecha_inicio, latestPaymentDate(pagos));
   const progreso = montoTotal > 0 ? Number(((totalPagado / montoTotal) * 100).toFixed(1)) : 0;
-  const mesesRenderizados = Math.min(mesesTotales, 360);
-  const mensualidades = Array.from({ length: mesesRenderizados }, (_, index) => {
+  const mensualidades = Array.from({ length: Math.min(mesesTotales, 360) }, (_, index) => {
     const numero = index + 1;
     const fechaVencimiento = addMonths(beneficiary.fecha_inicio, index);
     const pagado = paidMonthKeys.has(monthKey(fechaVencimiento));
@@ -69,7 +55,7 @@ export function enrichBeneficiary(db, beneficiary) {
       id: `${beneficiary.id}-${numero}`,
       beneficiario_id: beneficiary.id,
       numero_mes: numero,
-      monto_esperado: Number(beneficiary.mensualidad),
+      monto_esperado: mensualidad,
       estatus: pagado ? "pagado" : numero <= mesesTranscurridos ? "atrasado" : "pendiente",
       fecha_vencimiento: fechaVencimiento,
       pago: paymentsByMonth.get(monthKey(fechaVencimiento)) || null
@@ -77,8 +63,6 @@ export function enrichBeneficiary(db, beneficiary) {
   });
   const mensualidadActual = mensualidades.filter((month) => month.estatus === "pagado").length;
   const mensualidadesAtrasadas = mensualidades.filter((month) => month.estatus === "atrasado").length;
-  const adeudoAtrasado = Math.min(mensualidadesAtrasadas * mensualidad, saldo);
-
   return {
     ...beneficiary,
     pagos,
@@ -86,21 +70,48 @@ export function enrichBeneficiary(db, beneficiary) {
     resumen: {
       total_pagado: totalPagado,
       saldo_pendiente: saldo,
-      adeudo_atrasado: adeudoAtrasado,
+      adeudo_atrasado: Math.min(mensualidadesAtrasadas * mensualidad, saldo),
       mensualidad_actual: mensualidadActual,
       mensualidades_totales: mesesTotales,
       mensualidades_atrasadas: mensualidadesAtrasadas,
-      fechas_atrasadas: mensualidades
-        .filter((month) => month.estatus === "atrasado")
-        .map((month) => month.fecha_vencimiento),
+      fechas_atrasadas: mensualidades.filter((month) => month.estatus === "atrasado").map((month) => month.fecha_vencimiento),
       progreso
     }
   };
 }
 
+export async function readDb() {
+  const [beneficiariosResult, creditosResult, pagosResult] = await Promise.all([
+    supabase.from("beneficiarios").select("*"),
+    supabase.from("creditos").select("*"),
+    supabase.from("pagos").select("*")
+  ]);
+  throwDbError(beneficiariosResult.error, "No se pudieron leer los beneficiarios");
+  throwDbError(creditosResult.error, "No se pudieron leer los creditos");
+  throwDbError(pagosResult.error, "No se pudieron leer los pagos");
+  const peopleByFolio = new Map(beneficiariosResult.data.map((row) => [row.folio, row]));
+  const beneficiarios = creditosResult.data.map((credito) => ({
+    ...(peopleByFolio.get(credito.folio) || {}),
+    ...credito,
+    id: Number(credito.id_credito),
+    superficie: Number(peopleByFolio.get(credito.folio)?.superficie || 0),
+    monto_total_credito: Number(credito.monto_total_credito || 0),
+    mensualidad: Number(credito.mensualidad || 0),
+    enganche_total: Number(credito.enganche_total || 0)
+  }));
+  const pagos = pagosResult.data.map((row) => ({
+    ...row,
+    id: Number(row.id_pago),
+    beneficiario_id: Number(row.id_credito),
+    cajero_id: Number(row.usuario_id),
+    monto_pagado: Number(row.monto_pagado)
+  }));
+  return { beneficiarios, pagos };
+}
+
 export function publicUser(user) {
-  const { password, ...safeUser } = user;
-  return safeUser;
+  const { password, id_usuario, ...safeUser } = user;
+  return { id: Number(id_usuario), ...safeUser };
 }
 
 export async function readJson(req) {
@@ -120,7 +131,7 @@ export function send(res, status, data, contentType = "application/json") {
   res.end(contentType === "application/json" ? JSON.stringify(data) : data);
 }
 
-export function listBeneficiaries(db, queryText, options = {}) {
+export function listBeneficiaries(db, queryText) {
   const query = String(queryText || "").toLowerCase().trim();
   const matchesQuery = (row) => [
     row.folio,
@@ -130,9 +141,7 @@ export function listBeneficiaries(db, queryText, options = {}) {
     row.lote,
     row.manzana
   ].some((value) => String(value || "").toLowerCase().includes(query));
-
   return db.beneficiarios
-    .filter((row) => options.includeInactive !== false || row.estatus !== "baja")
     .filter((row) => !query || matchesQuery(row))
     .map((row) => enrichBeneficiary(db, row));
 }
@@ -141,17 +150,121 @@ export function findBeneficiary(db, id) {
   return db.beneficiarios.find((row) => row.id === Number(id));
 }
 
-export async function registerConsultation(req, db, area) {
-  const body = await readJson(req);
-  const checkin = {
-    id: nextId(db.consultas),
-    beneficiario_id: Number(body.beneficiario_id),
+export async function insertBeneficiary(body) {
+  const person = {
+    folio: body.folio,
+    nombre: body.nombre,
+    curp: body.curp || "",
+    domicilio: body.domicilio || "",
+    telefono: formatPhone(body.telefono),
+    colonia_fraccionamiento: body.colonia_fraccionamiento || "",
+    lote: body.lote || "",
+    manzana: body.manzana || "",
+    superficie: Number(body.superficie || 0)
+  };
+  const { error: personError } = await supabase.from("beneficiarios").insert(person);
+  throwDbError(personError, "No se pudo crear el beneficiario");
+  const mensualidad = Number(body.mensualidad || 0);
+  const monto = Number(body.monto_total_credito || 0);
+  const credit = {
+    folio: body.folio,
+    concepto: body.concepto || "Vivienda",
+    monto_total_credito: monto,
+    mensualidad,
+    numero_mensualidades: mensualidad > 0 ? Math.ceil(monto / mensualidad) : 0,
+    fecha_inicio: body.fecha_inicio,
+    fecha_entrega: body.fecha_entrega || body.fecha_inicio,
+    enganche_total: Number(body.enganche_total || 0),
+    estatus: "activo"
+  };
+  const { data, error } = await supabase.from("creditos").insert(credit).select("id_credito").single();
+  if (error) {
+    await supabase.from("beneficiarios").delete().eq("folio", body.folio);
+    throwDbError(error, "No se pudo crear el credito");
+  }
+  return Number(data.id_credito);
+}
+
+export async function updateBeneficiary(existing, body) {
+  const personFields = ["nombre", "curp", "domicilio", "colonia_fraccionamiento", "lote", "manzana"];
+  const person = Object.fromEntries(personFields.filter((key) => body[key] !== undefined).map((key) => [key, body[key]]));
+  if (body.telefono !== undefined) person.telefono = formatPhone(body.telefono);
+  if (body.superficie !== undefined) person.superficie = Number(body.superficie);
+  if (Object.keys(person).length) {
+    const { error } = await supabase.from("beneficiarios").update(person).eq("folio", existing.folio);
+    throwDbError(error, "No se pudo actualizar el beneficiario");
+  }
+  const creditFields = ["concepto", "fecha_inicio", "fecha_entrega", "estatus"];
+  const credit = Object.fromEntries(creditFields.filter((key) => body[key] !== undefined).map((key) => [key, body[key]]));
+  for (const key of ["monto_total_credito", "mensualidad", "enganche_total"]) {
+    if (body[key] !== undefined) credit[key] = Number(body[key]);
+  }
+  const monto = credit.monto_total_credito ?? existing.monto_total_credito;
+  const mensualidad = credit.mensualidad ?? existing.mensualidad;
+  credit.numero_mensualidades = mensualidad > 0 ? Math.ceil(monto / mensualidad) : 0;
+  const { error } = await supabase.from("creditos").update(credit).eq("id_credito", existing.id);
+  throwDbError(error, "No se pudo actualizar el credito");
+}
+
+export async function deleteBeneficiary(existing) {
+  const { error: paymentsError } = await supabase.from("pagos").delete().eq("id_credito", existing.id);
+  throwDbError(paymentsError, "No se pudieron eliminar los pagos");
+  const { error: consultationsError } = await supabase.from("consultas").delete().eq("folio", existing.folio);
+  throwDbError(consultationsError, "No se pudieron eliminar las consultas");
+  const { error: creditError } = await supabase.from("creditos").delete().eq("id_credito", existing.id);
+  throwDbError(creditError, "No se pudo eliminar el credito");
+  const { count, error: remainingError } = await supabase.from("creditos").select("id_credito", { count: "exact", head: true }).eq("folio", existing.folio);
+  throwDbError(remainingError, "No se pudo comprobar el expediente");
+  if (!count) {
+    const { error } = await supabase.from("beneficiarios").delete().eq("folio", existing.folio);
+    throwDbError(error, "No se pudo eliminar el beneficiario");
+  }
+}
+
+export async function insertPayment(beneficiary, body) {
+  const amount = Number(body.monto_pagado);
+  const payment = {
+    id_credito: beneficiary.id,
+    monto_pagado: Number(amount.toFixed(2)),
+    fecha_pago: body.fecha_pago,
+    usuario_id: Number(body.cajero_id),
+    comprobante: body.comprobante || null
+  };
+  const { data, error } = await supabase.from("pagos").insert(payment).select("id_pago").single();
+  throwDbError(error, "No se pudo registrar el pago");
+  if (!payment.comprobante) {
+    const comprobante = `REC-${String(data.id_pago).padStart(4, "0")}`;
+    const { error: updateError } = await supabase.from("pagos").update({ comprobante }).eq("id_pago", data.id_pago);
+    throwDbError(updateError, "No se pudo generar el comprobante");
+  }
+}
+
+export async function registerConsultation(body, beneficiary, area) {
+  const consultation = {
+    folio: beneficiary.folio,
     usuario_id: Number(body.usuario_id),
     area,
     motivo: body.motivo || "Consulta de expediente",
     fecha: new Date().toISOString()
   };
-  db.consultas.push(checkin);
-  await writeDb(db);
-  return checkin;
+  let { data, error } = await supabase.from("consultas").insert(consultation).select("*").single();
+  if (error?.code === "PGRST204") {
+    ({ data, error } = await supabase.from("consultas").insert({
+      folio: consultation.folio,
+      usuario_id: consultation.usuario_id,
+      fecha: consultation.fecha
+    }).select("*").single());
+  }
+  throwDbError(error, "No se pudo registrar la consulta");
+  return { ...data, id: Number(data.id_consulta), beneficiario_id: beneficiary.id };
+}
+
+export async function saveFinanceObservations(existing, body) {
+  const values = {
+    observaciones_finanzas: body.observaciones_finanzas || "",
+    fecha_observacion_finanzas: new Date().toISOString(),
+    usuario_observacion_finanzas_id: Number(body.usuario_id)
+  };
+  const { error } = await supabase.from("creditos").update(values).eq("id_credito", existing.id);
+  throwDbError(error, "No se pudieron guardar las observaciones");
 }

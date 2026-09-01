@@ -6,6 +6,7 @@ import { handleCaja } from "./caja.js";
 import { handleFinanzas } from "./finanzas.js";
 import { handleSecretaria } from "./secretaria.js";
 import { publicUser, readDb, readJson, send } from "./utils.js";
+import supabase from "./supabase.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, "..");
@@ -14,12 +15,20 @@ const PORT = process.env.PORT || 4000;
 
 async function handleApi(req, res, url) {
   if (req.method === "OPTIONS") return send(res, 204, {});
-  const db = await readDb();
 
   if (req.method === "POST" && url.pathname === "/api/login") {
     const body = await readJson(req);
-    const user = db.usuarios_sistema.find((row) => row.usuario === body.usuario && row.password === body.password);
-    if (!user) return send(res, 401, { message: "Usuario o password incorrecto" });
+    const { data: user, error } = await supabase
+  .from("usuarios_sistema")
+  .select("*")
+  .eq("usuario", body.usuario)
+  .eq("password", body.password)
+  .single();
+
+    if (error || !user) {
+  console.log(error);
+  return send(res, 401, { message: "Usuario o password incorrecto" });
+}
     if (body.rol && user.rol !== body.rol) return send(res, 403, { message: `Esta cuenta no pertenece al portal de ${body.rol}` });
     return send(res, 200, { user: publicUser(user) });
   }
@@ -29,6 +38,8 @@ async function handleApi(req, res, url) {
       googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || ""
     });
   }
+
+  const db = await readDb();
 
   if (url.pathname.startsWith("/api/caja/")) return await handleCaja(req, res, url, db);
   if (url.pathname.startsWith("/api/finanzas/")) return await handleFinanzas(req, res, url, db);
