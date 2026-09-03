@@ -3,7 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleCaja } from "./caja.js";
-import { handleFinanzas } from "./finanzas.js";
+import { handleCobranza } from "./cobranza.js";
 import { handleSecretaria } from "./secretaria.js";
 import { publicUser, readDb, readJson, send } from "./utils.js";
 import supabase from "./supabase.js";
@@ -42,7 +42,7 @@ async function handleApi(req, res, url) {
   const db = await readDb();
 
   if (url.pathname.startsWith("/api/caja/")) return await handleCaja(req, res, url, db);
-  if (url.pathname.startsWith("/api/finanzas/")) return await handleFinanzas(req, res, url, db);
+  if (url.pathname.startsWith("/api/cobranza/")) return await handleCobranza(req, res, url, db);
   if (url.pathname.startsWith("/api/secretaria/")) return await handleSecretaria(req, res, url, db);
 
   return send(res, 404, { message: "Ruta no encontrada" });

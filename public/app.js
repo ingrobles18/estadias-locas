@@ -11,8 +11,7 @@ const state = {
   rows: [],
   selected: null,
   query: "",
-  view: portal.views[0] || "consulta",
-  mapsConfig: null
+  view: portal.views[0] || "consulta"
 };
 
 const fields = {
@@ -106,21 +105,6 @@ async function refreshSelected(id = state.selected?.id) {
   state.selected = fresh;
   state.rows = state.rows.map((row) => row.id === fresh.id ? fresh : row);
   render();
-}
-
-async function loadMapsConfig() {
-  if (state.mapsConfig) return state.mapsConfig;
-  if (portal.googleMapsApiKey && portal.googleMapsApiKey !== "AIzaSyC7p5Tw6uGE-KhseArIMS7tWAjMtT4NCEI") {
-    state.mapsConfig = { googleMapsApiKey: portal.googleMapsApiKey };
-    return state.mapsConfig;
-  }
-  try {
-    const response = await fetch("/api/maps/config");
-    state.mapsConfig = response.ok ? await response.json() : { googleMapsApiKey: "" };
-  } catch {
-    state.mapsConfig = { googleMapsApiKey: "" };
-  }
-  return state.mapsConfig;
 }
 
 function renderLogin() {
@@ -291,13 +275,13 @@ function renderProfile(item) {
   `;
 }
 
-function renderFinanzas(item) {
+function renderCobranzaObservations(item) {
   return `
     <section class="observations panel">
-      <h3>Observaciones de Finanzas</h3>
-      <form id="financeNotesForm">
+      <h3>Observaciones de Cobranza</h3>
+      <form id="cobranzaNotesForm">
         <label>Observaciones
-          <textarea name="observaciones_finanzas" rows="5" placeholder="Escribe observaciones del expediente">${esc(item.observaciones_finanzas || "")}</textarea>
+          <textarea name="observaciones_cobranza" rows="5" placeholder="Escribe observaciones del expediente">${esc(item.observaciones_cobranza || "")}</textarea>
         </label>
         <button>Guardar observaciones</button>
       </form>
@@ -381,79 +365,6 @@ function renderCobranza(item) {
   `;
 }
 
-function mapQuery(item) {
-  return [
-    item.domicilio,
-    item.colonia_fraccionamiento,
-    item.lote ? `Lote ${item.lote}` : "",
-    item.manzana ? `Manzana ${item.manzana}` : "",
-    "Mexico"
-  ].filter(Boolean).join(", ");
-}
-
-function renderMapsView() {
-  const rows = state.rows.filter((row) => row.estatus !== "baja");
-  const byColonia = rows.reduce((groups, row) => {
-    const name = row.colonia_fraccionamiento || "Sin colonia";
-    groups[name] = (groups[name] || 0) + 1;
-    return groups;
-  }, {});
-  const target = state.selected || rows[0];
-  const query = target ? mapQuery(target) : state.query;
-  const encodedQuery = encodeURIComponent(query || "Mexico");
-  const key = state.mapsConfig?.googleMapsApiKey || "";
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedQuery}`;
-  const embedUrl = key ? `https://www.google.com/maps/embed/v1/place?key=${encodeURIComponent(key)}&q=${encodedQuery}&region=mx` : "";
-
-  return `
-    <section class="maps-layout">
-      <aside class="map-index">
-        <h3>Ubicacion por colonia</h3>
-        <div class="colony-list">
-          ${Object.entries(byColonia).sort((a, b) => b[1] - a[1]).map(([name, count]) => `
-            <button data-action="map-search" data-query="${esc(name)}">
-              <span>${esc(name)}</span>
-              <b>${count}</b>
-            </button>
-          `).join("") || `<p class="list-empty">Sin domicilios registrados</p>`}
-        </div>
-      </aside>
-      <section class="map-panel">
-        <div class="map-toolbar">
-          <div>
-            <h3>${target ? esc(target.nombre) : "Mapa de beneficiarios"}</h3>
-            <p>${esc(query || "Busca por colonia, lote, manzana o direccion")}</p>
-          </div>
-          <a href="${mapsUrl}" target="_blank" rel="noreferrer">Abrir en Google Maps</a>
-        </div>
-        ${embedUrl ? `
-          <iframe
-            class="map-frame"
-            loading="lazy"
-            allowfullscreen
-            referrerpolicy="strict-origin-when-cross-origin"
-            src="${embedUrl}">
-          </iframe>
-        ` : `
-          <div class="map-empty">
-            <b>Google Maps API pendiente</b>
-            <span>Configura GOOGLE_MAPS_API_KEY para ver el mapa embebido. Mientras tanto puedes abrir la direccion en Google Maps.</span>
-          </div>
-        `}
-        <div class="map-results">
-          ${rows.map((row) => `
-            <button data-action="select" data-id="${row.id}" class="${state.selected?.id === row.id ? "selected" : ""}">
-              <b>${esc(row.nombre)}</b>
-              <span>${esc(row.colonia_fraccionamiento || "Sin colonia")} - Lote ${esc(row.lote || "-")} - Manzana ${esc(row.manzana || "-")}</span>
-              <small>${esc(row.domicilio || "Sin domicilio")}</small>
-            </button>
-          `).join("") || `<p class="list-empty">No hay coincidencias de domicilio</p>`}
-        </div>
-      </section>
-    </section>
-  `;
-}
-
 function attachCreateForm() {
   const createForm = document.getElementById("createForm");
   if (!createForm) return;
@@ -504,13 +415,6 @@ function attachHandlers() {
     await loadRows(state.query);
   });
 
-  document.querySelectorAll("[data-action='map-search']").forEach((button) => {
-    button.addEventListener("click", async () => {
-      state.query = button.dataset.query;
-      await loadRows(state.query);
-    });
-  });
-
   document.querySelector("[data-action='checkin']")?.addEventListener("click", async () => {
     await api("/consultas", {
       method: "POST",
@@ -554,7 +458,7 @@ function attachHandlers() {
     await loadRows(state.query);
   });
 
-  document.getElementById("financeNotesForm")?.addEventListener("submit", async (event) => {
+  document.getElementById("cobranzaNotesForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const body = Object.fromEntries(new FormData(event.currentTarget));
     await api(`/beneficiarios/${state.selected.id}/observaciones`, {
@@ -586,7 +490,7 @@ function render() {
   }
 
   const isCaja = state.user.rol === "caja";
-  const isFinanzas = state.user.rol === "finanzas";
+  const isCobranza = state.user.rol === "cobranza";
   if (portal.role && state.user.rol !== portal.role) {
     localStorage.removeItem("inmuvi-user");
     state.user = null;
@@ -594,7 +498,6 @@ function render() {
     return;
   }
   if (!portal.views.includes(state.view)) state.view = portal.views[0] || "consulta";
-  if (state.view === "mapas" && !state.mapsConfig) loadMapsConfig().then(() => render());
   const activeRows = state.rows.filter((row) => row.estatus !== "baja");
   const debtRows = activeRows.filter((row) => row.resumen.saldo_pendiente > 0);
   const paidRows = activeRows.filter((row) => row.resumen.saldo_pendiente <= 0);
@@ -613,7 +516,6 @@ function render() {
       <aside class="sidebar">
         <div class="brand"><div class="mark">IN</div><div><b>INMUVI</b><span>${esc(portal.title)}</span></div></div>
         ${portal.views.includes("consulta") ? `<button data-view="consulta" class="${state.view === "consulta" ? "active" : ""}">Consulta</button>` : ""}
-        ${portal.views.includes("mapas") ? `<button data-view="mapas" class="${state.view === "mapas" ? "active" : ""}">Mapas</button>` : ""}
         ${portal.views.includes("caja") && isCaja ? `<button data-view="caja" class="${state.view === "caja" ? "active" : ""}">Caja</button>` : ""}
         ${portal.views.includes("cobranza") ? `<button data-view="cobranza" class="${state.view === "cobranza" ? "active" : ""}">Cobranza</button>` : ""}
         <div class="role"><b>${esc(state.user.nombre)}</b><span>${esc(state.user.rol)}</span></div>
@@ -622,11 +524,11 @@ function render() {
       <section class="workspace">
         <header class="topbar">
           <div>
-            <p>${state.view === "caja" ? "Administracion de caja" : state.view === "mapas" ? "Domicilios y ubicacion" : "Consulta institucional"}</p>
-            <h1>${state.view === "cobranza" ? "Seguimiento de cobranza" : state.view === "mapas" ? "Mapas de beneficiarios" : "Expedientes y pagos"}</h1>
+            <p>${state.view === "caja" ? "Administracion de caja" : "Consulta institucional"}</p>
+            <h1>${state.view === "cobranza" ? "Seguimiento de cobranza" : "Expedientes y pagos"}</h1>
           </div>
           <form class="search" id="searchForm">
-            <input name="query" value="${esc(state.query)}" placeholder="Buscar por folio, nombre, colonia, lote o manzana" />
+            <input name="query" value="${esc(state.query)}" placeholder="Buscar por folio o nombre" />
             <button>Buscar</button>
           </form>
         </header>
@@ -636,16 +538,16 @@ function render() {
           ${metric("Liquidados", totals.liquidados)}
           ${metric("Dados de baja", totals.bajas)}
         </section>
-        ${state.view === "mapas" ? renderMapsView() : `<section class="grid">
+        <section class="grid">
           ${renderList()}
           <section class="detail">
             ${state.selected ? renderProfile(state.selected) : `<div class="empty">No hay beneficiarios para mostrar.</div>`}
             ${state.selected && state.view === "caja" && isCaja ? renderCaja(state.selected) : ""}
             ${state.view === "caja" && isCaja ? renderCreateSection(!state.selected) : ""}
-            ${state.selected && isFinanzas ? renderFinanzas(state.selected) : ""}
+            ${state.selected && isCobranza ? renderCobranzaObservations(state.selected) : ""}
             ${state.selected && state.view === "cobranza" ? renderCobranza(state.selected) : ""}
           </section>
-        </section>`}
+        </section>
       </section>
     </main>
   `;

@@ -259,11 +259,11 @@ export async function registerConsultation(body, beneficiary, area) {
   return { ...data, id: Number(data.id_consulta), beneficiario_id: beneficiary.id };
 }
 
-export async function saveFinanceObservations(existing, body) {
+export async function saveCobranzaObservations(existing, body) {
   const values = {
-    observaciones_finanzas: body.observaciones_finanzas || "",
-    fecha_observacion_finanzas: new Date().toISOString(),
-    usuario_observacion_finanzas_id: Number(body.usuario_id)
+    observaciones_cobranza: body.observaciones_cobranza || "",
+    fecha_observacion_cobranza: new Date().toISOString(),
+    usuario_observacion_cobranza_id: Number(body.usuario_id)
   };
   const { error } = await supabase.from("creditos").update(values).eq("id_credito", existing.id);
   throwDbError(error, "No se pudieron guardar las observaciones");
