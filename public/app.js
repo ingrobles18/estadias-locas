@@ -6,11 +6,18 @@ const portal = window.INMUVI_PORTAL || {
   views: ["consulta", "caja", "cobranza"]
 };
 const API = portal.apiBase || `/api/${portal.role || "caja"}`;
+const portalOptions = [
+  { role: "caja", title: "Caja", user: "caja", password: "caja123", href: "caja.html" },
+  { role: "cobranza", title: "Cobranza", user: "cobranza", password: "cobranza123", href: "cobranza.html" },
+  { role: "secretaria", title: "Secretaria Tecnica", user: "secretaria", password: "secretaria123", href: "secretaria.html" }
+];
 const state = {
   user: JSON.parse(localStorage.getItem("inmuvi-user") || "null"),
   rows: [],
   selected: null,
   query: "",
+  listFilter: "debt",
+  listCollapsed: false,
   menuHidden: localStorage.getItem("inmuvi-menu-hidden") === "true",
   cobranzaFilters: {
     manzana: "",
@@ -434,20 +441,51 @@ async function refreshSelected(id = state.selected?.id) {
 }
 
 function renderLogin() {
+  const activePortal = portalOptions.find((option) => option.role === portal.role) || portalOptions[0];
   root.innerHTML = `
     <main class="login">
-      <form class="login-box" id="loginForm">
-        ${brand()}
-        <label>Usuario<input name="usuario" value="${esc(portal.user)}" /></label>
-        <label>Password<input name="password" type="password" value="${esc(portal.password)}" /></label>
-        <p class="error" id="loginError"></p>
-        <button>Entrar al portal</button>
-        <div class="demo">
-          <span>Acceso de este portal:</span>
-          <b>${esc(portal.user)}/${esc(portal.password)}</b>
-          <a href="index.html">Cambiar de portal</a>
+      <section class="login-visual">
+        <div class="login-copy">
+          <img class="login-emblem" src="inmuvi-logo.svg" alt="INMUVI" />
+          <p>Control institucional</p>
+          <h1>${esc(portal.title)}</h1>
+          <span>Consulta expedientes, pagos y seguimiento desde un portal seguro.</span>
         </div>
-      </form>
+        <div class="login-stats">
+          <span><b>Pagos</b> al dia</span>
+          <span><b>Expedientes</b> claros</span>
+          <span><b>Cobranza</b> activa</span>
+        </div>
+      </section>
+      <section class="login-card">
+        <form class="login-box" id="loginForm">
+          ${brand()}
+          <div class="login-heading">
+            <p>Acceso institucional</p>
+            <h1>Iniciar sesion</h1>
+          </div>
+          <div class="login-portals" aria-label="Seleccionar usuario">
+            ${portalOptions.map((option) => `
+              <a
+                class="${option.role === activePortal.role ? "active" : ""}"
+                href="${option.href}"
+                title="${esc(option.user)} / ${esc(option.password)}"
+              >
+                <b>${esc(option.title)}</b>
+                <span>${esc(option.user)} / ${esc(option.password)}</span>
+              </a>
+            `).join("")}
+          </div>
+          <label>Usuario<input name="usuario" autocomplete="username" value="${esc(portal.user)}" /></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" value="${esc(portal.password)}" /></label>
+          <p class="error" id="loginError"></p>
+          <button>Entrar al portal</button>
+          <div class="demo">
+            <span>Credenciales de prueba</span>
+            <b>${esc(portal.user)} / ${esc(portal.password)}</b>
+          </div>
+        </form>
+      </section>
     </main>
   `;
 
@@ -493,21 +531,25 @@ function renderList() {
   const isCobranza = state.user?.rol === "cobranza";
   const groups = [
     {
+      type: "debt",
       title: "Personas que deben",
       rows: state.rows.filter((row) => row.estatus !== "baja" && row.resumen.saldo_pendiente > 0),
       empty: "Sin personas con adeudo"
     },
     {
+      type: "paid",
       title: "Ya terminaron de pagar",
       rows: state.rows.filter((row) => row.estatus !== "baja" && row.resumen.saldo_pendiente <= 0),
       empty: "Sin expedientes liquidados"
     },
     {
+      type: "inactive",
       title: "Dados de baja",
       rows: state.rows.filter((row) => row.estatus === "baja"),
       empty: "Sin personas dadas de baja"
     }
   ];
+  const visibleGroups = groups.filter((group) => group.type === state.listFilter);
 
   const renderRow = (row) => {
     const isPaid = row.estatus !== "baja" && row.resumen.saldo_pendiente <= 0;
@@ -531,12 +573,36 @@ function renderList() {
     <section class="list">
       <h3>Beneficiarios</h3>
       ${canCreate ? `<button class="new-beneficiary-button" data-action="toggle-create">Nuevo beneficiario</button>` : ""}
-      ${groups.map((group) => `
-        <div class="list-group">
-          <div class="list-group-title"><span>${group.title}</span><b>${group.rows.length}</b></div>
-          ${group.rows.map(renderRow).join("") || `<p class="list-empty">${group.empty}</p>`}
+      <div class="list-filters" aria-label="Filtrar beneficiarios">
+        ${groups.map((group) => `
+          <button
+            type="button"
+            data-list-filter="${group.type}"
+            class="${state.listFilter === group.type ? "active" : ""}"
+          >
+            <span>${esc(group.title)}</span>
+            <b>${group.rows.length}</b>
+          </button>
+        `).join("")}
+      </div>
+      ${state.listCollapsed ? "" : `
+        <div class="list-results">
+          ${visibleGroups.map((group) => `
+            <div class="list-group list-group-${group.type}">
+              <div class="list-group-title">
+                <span>${group.title}</span>
+                <div>
+                  <b>${group.rows.length}</b>
+                  <button class="list-close" type="button" data-action="collapse-list" aria-label="Ocultar personas">×</button>
+                </div>
+              </div>
+              <div class="list-group-rows">
+                ${group.rows.map(renderRow).join("") || `<p class="list-empty">${group.empty}</p>`}
+              </div>
+            </div>
+          `).join("")}
         </div>
-      `).join("")}
+      `}
     </section>
   `;
 }
@@ -777,6 +843,40 @@ function attachHandlers() {
     });
   });
 
+  document.querySelectorAll("[data-list-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.listFilter = button.dataset.listFilter;
+      state.listCollapsed = false;
+      render();
+    });
+  });
+
+  document.querySelector("[data-action='collapse-list']")?.addEventListener("click", () => {
+    state.listCollapsed = true;
+    render();
+  });
+
+  const listResults = document.querySelector(".list-results");
+  const listFilters = document.querySelector(".list-filters");
+  if (listResults && listFilters) {
+    let previousScrollTop = listResults.scrollTop;
+    let filtersHidden = false;
+    listResults.addEventListener("scroll", () => {
+      const currentScrollTop = listResults.scrollTop;
+      const scrollingDown = currentScrollTop > previousScrollTop + 2;
+      const scrollingUp = currentScrollTop < previousScrollTop - 2;
+
+      if ((currentScrollTop <= 4 || scrollingUp) && filtersHidden) {
+        listFilters.classList.remove("is-hidden");
+        filtersHidden = false;
+      } else if (scrollingDown && !filtersHidden) {
+        listFilters.classList.add("is-hidden");
+        filtersHidden = true;
+      }
+      previousScrollTop = currentScrollTop;
+    });
+  }
+
   document.getElementById("logout")?.addEventListener("click", () => {
     localStorage.removeItem("inmuvi-user");
     state.user = null;
@@ -966,7 +1066,7 @@ function render() {
           <section class="detail">
             ${state.selected ? renderProfile(state.selected) : `<div class="empty">No hay beneficiarios para mostrar.</div>`}
             ${state.selected && state.view === "caja" && isCaja ? renderCaja(state.selected) : ""}
-            ${state.view === "caja" && isCaja ? renderCreateSection(!state.selected) : ""}
+            ${isCaja ? renderCreateSection(!state.selected) : ""}
             ${state.selected && isCobranza ? renderCobranzaObservations(state.selected) : ""}
             ${state.selected && state.view === "cobranza" ? renderCobranza(state.selected) : ""}
           </section>
