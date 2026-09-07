@@ -131,19 +131,125 @@ export function send(res, status, data, contentType = "application/json") {
   res.end(contentType === "application/json" ? JSON.stringify(data) : data);
 }
 
-export function listBeneficiaries(db, queryText) {
-  const query = String(queryText || "").toLowerCase().trim();
-  const matchesQuery = (row) => [
+function normalizeSearchText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function compactNumber(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? String(Math.round(number * 100) / 100).replace(/\.0+$/, "") : "";
+}
+
+function queryTokens(queryText) {
+  return normalizeSearchText(queryText)
+    .replace(/(\d),(?=\d{3}\b)/g, "$1")
+    .split(/[^a-z0-9.]+/)
+    .filter((token) => token && !["de", "del", "la", "el", "los", "las", "por", "con", "y"].includes(token));
+}
+
+function searchAmount(queryText) {
+  const match = String(queryText || "").match(/\$?\s*\d[\d,]*(?:\.\d{1,2})?/);
+  if (!match) return null;
+  const amount = Number(match[0].replace(/[$,\s]/g, ""));
+  return Number.isFinite(amount) ? Math.round(amount * 100) : null;
+}
+
+function isMoneyToken(token) {
+  return /^\d+(?:\.\d{1,2})?$/.test(token);
+}
+
+function cents(value) {
+  return Math.round(Number(value || 0) * 100);
+}
+
+function debtAmountMatch(row, amount) {
+  const resumen = row.resumen || {};
+  return cents(resumen.saldo_pendiente) === amount || cents(resumen.adeudo_atrasado) === amount;
+}
+
+function isDebtToken(token) {
+  return ["adeudo", "adeudos", "deuda", "deudas", "debe", "deudor", "deudores", "saldo", "pendiente"].includes(token);
+}
+
+function semanticTokenMatch(row, token) {
+  const resumen = row.resumen || {};
+  if (isDebtToken(token)) {
+    return Number(resumen.saldo_pendiente || 0) > 0;
+  }
+  if (["atraso", "atrasos", "atrasado", "atrasados", "vencido", "vencidos"].includes(token)) {
+    return Number(resumen.adeudo_atrasado || 0) > 0 || Number(resumen.mensualidades_atrasadas || 0) > 0;
+  }
+  if (["liquidado", "liquidados", "pagado", "pagados"].includes(token)) {
+    return row.estatus !== "baja" && Number(resumen.saldo_pendiente || 0) <= 0;
+  }
+  if (["baja", "bajas"].includes(token)) {
+    return row.estatus === "baja";
+  }
+  return null;
+}
+
+function searchableBeneficiaryText(row) {
+  const resumen = row.resumen || {};
+  const values = [
     row.folio,
     row.nombre,
+    row.curp,
     row.domicilio,
+    row.telefono,
+    row.correo,
+    row.fecha_nacimiento,
+    row.ocupacion,
+    row.estado_civil,
+    row.ine,
     row.colonia_fraccionamiento,
     row.lote,
-    row.manzana
-  ].some((value) => String(value || "").toLowerCase().includes(query));
+    row.manzana,
+    row.concepto,
+    row.estatus,
+    row.observaciones_generales,
+    "mensualidad mensualidades pago pagos",
+    row.monto_total_credito,
+    row.mensualidad,
+    row.enganche_total,
+    resumen.total_pagado,
+    resumen.saldo_pendiente,
+    resumen.adeudo_atrasado,
+    resumen.mensualidad_actual,
+    resumen.mensualidades_totales,
+    resumen.mensualidades_atrasadas,
+    ...(resumen.fechas_atrasadas || [])
+  ];
+  const rawText = values.map((value) => String(value ?? "")).join(" ");
+  const compactAmounts = [
+    row.monto_total_credito,
+    row.mensualidad,
+    row.enganche_total,
+    resumen.total_pagado,
+    resumen.saldo_pendiente,
+    resumen.adeudo_atrasado
+  ].map(compactNumber);
+  return normalizeSearchText(`${rawText} ${compactAmounts.join(" ")}`);
+}
+
+export function listBeneficiaries(db, queryText) {
+  const tokens = queryTokens(queryText);
+  const amount = searchAmount(queryText);
+  const hasDebtSearch = tokens.some(isDebtToken);
+  const matchesQuery = (row) => {
+    if (hasDebtSearch && amount !== null && !debtAmountMatch(row, amount)) return false;
+    const text = searchableBeneficiaryText(row);
+    return tokens.every((token) => {
+      if (hasDebtSearch && amount !== null && isMoneyToken(token)) return true;
+      const semanticMatch = semanticTokenMatch(row, token);
+      return semanticMatch === null ? text.includes(token) : semanticMatch;
+    });
+  };
   return db.beneficiarios
-    .filter((row) => !query || matchesQuery(row))
-    .map((row) => enrichBeneficiary(db, row));
+    .map((row) => enrichBeneficiary(db, row))
+    .filter((row) => !tokens.length || matchesQuery(row));
 }
 
 export function findBeneficiary(db, id) {
@@ -157,10 +263,16 @@ export async function insertBeneficiary(body) {
     curp: body.curp || "",
     domicilio: body.domicilio || "",
     telefono: formatPhone(body.telefono),
+    correo: body.correo || "",
+    fecha_nacimiento: body.fecha_nacimiento || null,
+    ocupacion: body.ocupacion || "",
+    estado_civil: body.estado_civil || "",
+    ine: body.ine || "",
     colonia_fraccionamiento: body.colonia_fraccionamiento || "",
     lote: body.lote || "",
     manzana: body.manzana || "",
-    superficie: Number(body.superficie || 0)
+    superficie: Number(body.superficie || 0),
+    observaciones_generales: body.observaciones_generales || ""
   };
   const { error: personError } = await supabase.from("beneficiarios").insert(person);
   throwDbError(personError, "No se pudo crear el beneficiario");
@@ -186,8 +298,22 @@ export async function insertBeneficiary(body) {
 }
 
 export async function updateBeneficiary(existing, body) {
-  const personFields = ["nombre", "curp", "domicilio", "colonia_fraccionamiento", "lote", "manzana"];
+  const personFields = [
+    "nombre",
+    "curp",
+    "domicilio",
+    "correo",
+    "fecha_nacimiento",
+    "ocupacion",
+    "estado_civil",
+    "ine",
+    "colonia_fraccionamiento",
+    "lote",
+    "manzana",
+    "observaciones_generales"
+  ];
   const person = Object.fromEntries(personFields.filter((key) => body[key] !== undefined).map((key) => [key, body[key]]));
+  if (person.fecha_nacimiento === "") person.fecha_nacimiento = null;
   if (body.telefono !== undefined) person.telefono = formatPhone(body.telefono);
   if (body.superficie !== undefined) person.superficie = Number(body.superficie);
   if (Object.keys(person).length) {

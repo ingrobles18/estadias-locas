@@ -16,6 +16,8 @@ button { cursor: pointer; }
   display: grid;
   grid-template-columns: 280px 1fr;
 }
+.app-shell.menu-hidden { grid-template-columns: 1fr; }
+.app-shell.menu-hidden .sidebar { display: none; }
 
 .sidebar {
   background: #0f2732;
@@ -24,23 +26,27 @@ button { cursor: pointer; }
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow: hidden;
 }
+.sidebar-menu { display: grid; gap: 12px; }
+.app-shell.menu-hidden .sidebar-menu { display: none; }
 
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
 .brand b { display: block; font-size: 1.18rem; }
 .brand span, .role span, .topbar p, .info span, .metric span, .list small, .list span { color: #6d7b86; }
 .sidebar .brand span, .sidebar .role span { color: #b4c5cc; }
-.mark {
+.brand-logo {
   width: 48px;
   height: 48px;
   border-radius: 8px;
-  display: grid;
-  place-items: center;
-  background: #1e9f89;
-  color: white;
-  font-weight: 900;
+  object-fit: contain;
+  background: white;
+  padding: 4px;
 }
-
 .sidebar button, .logout {
   border: 0;
   border-radius: 8px;
@@ -52,11 +58,36 @@ button { cursor: pointer; }
   font-weight: 800;
 }
 .sidebar button.active, .sidebar button:hover { background: #173b49; color: white; }
-.role { margin-top: auto; padding: 14px; background: #173b49; border-radius: 8px; display: grid; gap: 4px; }
-.logout { color: #ffc7bd; }
+.sidebar .menu-hide {
+  min-height: 36px;
+  margin-bottom: 4px;
+  background: #173b49;
+  color: white;
+  text-align: center;
+}
+.sidebar-footer { margin-top: auto; display: grid; gap: 10px; padding-bottom: 8px; }
+.menu-hidden .sidebar-footer { align-self: stretch; }
+.role { padding: 14px; background: #173b49; border-radius: 8px; display: grid; gap: 4px; }
+.logout { color: #ffc7bd; background: transparent; }
+.logout:hover { background: #173b49; color: #ffd7d0; }
 
 .workspace { padding: 26px; overflow: hidden; }
 .topbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 20px; }
+.topbar-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.menu-logo-toggle {
+  border: 1px solid #cfdbe1;
+  border-radius: 8px;
+  width: 48px;
+  height: 48px;
+  padding: 5px;
+  background: white;
+  display: none;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.menu-logo-toggle img { width: 100%; height: 100%; object-fit: contain; }
+.menu-logo-toggle:hover { background: #f4f7f8; }
+.menu-hidden .menu-logo-toggle { display: grid; }
 .topbar p { margin: 0 0 4px; text-transform: uppercase; font-size: .75rem; font-weight: 900; }
 h1, h2, h3 { margin: 0; }
 
@@ -79,6 +110,20 @@ h1, h2, h3 { margin: 0; }
   color: white;
   font-weight: 800;
 }
+.search .search-clear {
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  align-self: center;
+  padding: 0;
+  border-radius: 50%;
+  background: #edf2f4;
+  color: #53636c;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.search .search-clear:hover { background: #dde7eb; color: #17212b; }
+.search .search-clear[hidden] { display: none; }
 .secondary { background: #e8f4f1; color: #176a5d; }
 .danger-button {
   background: #fff0ed;
@@ -167,6 +212,7 @@ label { display: grid; gap: 6px; font-size: .82rem; color: #52616b; font-weight:
 input, select, textarea { border: 1px solid #cfdbe1; border-radius: 8px; min-height: 40px; padding: 9px 10px; color: #17212b; background: white; }
 .observations, .observations form { display: grid; gap: 12px; }
 .observations label, .observations button { grid-column: 1 / -1; }
+.panel label:has(textarea), .create-form label:has(textarea) { grid-column: 1 / -1; }
 .create > button { width: 100%; }
 .create-form { margin-top: 12px; }
 
@@ -229,6 +275,7 @@ input, select, textarea { border: 1px solid #cfdbe1; border-radius: 8px; min-hei
 @media (max-width: 980px) {
   .app-shell, .grid { grid-template-columns: 1fr; }
   .topbar, .profile-head { align-items: stretch; flex-direction: column; }
+  .topbar-title { align-items: flex-start; }
   .metrics, .info-grid, .actions { grid-template-columns: 1fr; }
 }
 

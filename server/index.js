@@ -59,7 +59,8 @@ async function serveStatic(req, res, url) {
       ".html": "text/html; charset=utf-8",
       ".css": "text/css; charset=utf-8",
       ".jsx": "text/babel; charset=utf-8",
-      ".js": "application/javascript; charset=utf-8"
+      ".js": "application/javascript; charset=utf-8",
+      ".svg": "image/svg+xml"
     };
     send(res, 200, file, contentTypes[ext] || "application/octet-stream");
   } catch {

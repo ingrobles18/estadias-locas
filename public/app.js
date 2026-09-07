@@ -11,14 +11,21 @@ const state = {
   rows: [],
   selected: null,
   query: "",
+  menuHidden: localStorage.getItem("inmuvi-menu-hidden") === "true",
   view: portal.views[0] || "consulta"
 };
 
 const fields = {
   folio: "",
   nombre: "",
+  curp: "",
   domicilio: "",
   telefono: "",
+  correo: "",
+  fecha_nacimiento: "",
+  ocupacion: "",
+  estado_civil: "",
+  ine: "",
   colonia_fraccionamiento: "",
   lote: "",
   manzana: "",
@@ -28,10 +35,20 @@ const fields = {
   mensualidad: "",
   fecha_inicio: new Date().toISOString().slice(0, 10),
   fecha_entrega: new Date().toISOString().slice(0, 10),
-  enganche_total: ""
+  enganche_total: "",
+  observaciones_generales: ""
 };
 
 const root = document.getElementById("root");
+
+function brand() {
+  return `
+    <div class="brand">
+      <img class="brand-logo" src="inmuvi-logo.svg" alt="INMUVI" />
+      <div><b>INMUVI</b><span>${esc(portal.title)}</span></div>
+    </div>
+  `;
+}
 
 function money(value) {
   return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(Number(value || 0));
@@ -50,6 +67,116 @@ function date(value) {
   return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
 }
 
+function addMonths(dateText, months) {
+  const date = new Date(`${dateText}T00:00:00`);
+  date.setMonth(date.getMonth() + months);
+  return date.toISOString().slice(0, 10);
+}
+
+function createDemoBeneficiary(data) {
+  const mensualidadesTotales = Math.ceil(data.monto_total_credito / data.mensualidad);
+  const pagos = Array.from({ length: data.meses_pagados }, (_, index) => ({
+    id: Number(`${data.id}${String(index + 1).padStart(2, "0")}`),
+    beneficiario_id: data.id,
+    fecha_pago: addMonths(data.fecha_inicio, index),
+    monto_pagado: data.mensualidad,
+    comprobante: `REC-${String(data.id).padStart(2, "0")}${String(index + 1).padStart(2, "0")}`
+  }));
+  const mensualidades = Array.from({ length: Math.min(mensualidadesTotales, data.meses_pagados + data.meses_atrasados + 3) }, (_, index) => {
+    const numeroMes = index + 1;
+    const pago = pagos[index] || null;
+    const estatus = pago ? "pagado" : numeroMes <= data.meses_pagados + data.meses_atrasados ? "atrasado" : "pendiente";
+    return {
+      id: `${data.id}-${numeroMes}`,
+      beneficiario_id: data.id,
+      numero_mes: numeroMes,
+      monto_esperado: data.mensualidad,
+      estatus,
+      fecha_vencimiento: addMonths(data.fecha_inicio, index),
+      pago
+    };
+  });
+  const totalPagado = pagos.reduce((sum, payment) => sum + payment.monto_pagado, 0);
+  const saldoPendiente = Math.max(data.monto_total_credito - totalPagado, 0);
+  const mensualidadesAtrasadas = mensualidades.filter((month) => month.estatus === "atrasado").length;
+  return {
+    id: data.id,
+    folio: data.folio,
+    nombre: data.nombre,
+    curp: data.curp,
+    domicilio: data.domicilio,
+    telefono: data.telefono,
+    correo: data.correo,
+    fecha_nacimiento: data.fecha_nacimiento,
+    ocupacion: data.ocupacion,
+    estado_civil: data.estado_civil,
+    ine: data.ine,
+    colonia_fraccionamiento: data.colonia_fraccionamiento,
+    lote: data.lote,
+    manzana: data.manzana,
+    superficie: data.superficie,
+    concepto: data.concepto || "Vivienda social",
+    monto_total_credito: data.monto_total_credito,
+    mensualidad: data.mensualidad,
+    fecha_inicio: data.fecha_inicio,
+    fecha_entrega: data.fecha_entrega,
+    enganche_total: data.enganche_total,
+    observaciones_generales: data.observaciones_generales || "",
+    estatus: data.estatus || "activo",
+    observaciones_cobranza: data.observaciones_cobranza || "",
+    pagos,
+    mensualidades,
+    resumen: {
+      total_pagado: totalPagado,
+      saldo_pendiente: saldoPendiente,
+      adeudo_atrasado: Math.min(mensualidadesAtrasadas * data.mensualidad, saldoPendiente),
+      mensualidad_actual: data.meses_pagados,
+      mensualidades_totales: mensualidadesTotales,
+      mensualidades_atrasadas: mensualidadesAtrasadas,
+      fechas_atrasadas: mensualidades.filter((month) => month.estatus === "atrasado").map((month) => month.fecha_vencimiento),
+      progreso: data.monto_total_credito > 0 ? Number(((totalPagado / data.monto_total_credito) * 100).toFixed(1)) : 0
+    }
+  };
+}
+
+const demoBeneficiaries = [
+  createDemoBeneficiary({
+    id: 1,
+    folio: "INM-001",
+    nombre: "Maria Gonzalez Lopez",
+    curp: "GOLM900101MGTNPR01",
+    domicilio: "Av. Principal 120",
+    telefono: "4771234567",
+    correo: "maria.gonzalez@example.com",
+    fecha_nacimiento: "1990-01-01",
+    ocupacion: "Comerciante",
+    estado_civil: "Casada",
+    ine: "1234567890123",
+    colonia_fraccionamiento: "Centro",
+    lote: "12",
+    manzana: "4",
+    superficie: 96,
+    monto_total_credito: 120000,
+    mensualidad: 2500,
+    fecha_inicio: "2026-01-01",
+    fecha_entrega: "2026-01-15",
+    enganche_total: 10000,
+    meses_pagados: 2,
+    meses_atrasados: 1,
+    observaciones_generales: "Expediente completo.",
+    observaciones_cobranza: "Pendiente de llamada de seguimiento."
+  }),
+  createDemoBeneficiary({ id: 2, folio: "INM-002", nombre: "Jose Luis Ramirez Perez", curp: "RAPJ850315HGTMRL02", domicilio: "Calle Roble 45", telefono: "4772234567", correo: "jose.ramirez@example.com", fecha_nacimiento: "1985-03-15", ocupacion: "Albanil", estado_civil: "Soltero", ine: "2234567890123", colonia_fraccionamiento: "Las Torres", lote: "8", manzana: "2", superficie: 105, monto_total_credito: 98000, mensualidad: 2200, fecha_inicio: "2026-02-01", fecha_entrega: "2026-02-12", enganche_total: 8000, meses_pagados: 1, meses_atrasados: 3, observaciones_cobranza: "Tiene tres mensualidades atrasadas." }),
+  createDemoBeneficiary({ id: 3, folio: "INM-003", nombre: "Ana Sofia Martinez Cruz", curp: "MACA920720MGTNRN03", domicilio: "Privada Naranjo 17", telefono: "4773234567", correo: "ana.martinez@example.com", fecha_nacimiento: "1992-07-20", ocupacion: "Empleada", estado_civil: "Union libre", ine: "3234567890123", colonia_fraccionamiento: "San Miguel", lote: "21", manzana: "5", superficie: 90, monto_total_credito: 110000, mensualidad: 2500, fecha_inicio: "2026-03-01", fecha_entrega: "2026-03-18", enganche_total: 9000, meses_pagados: 4, meses_atrasados: 0 }),
+  createDemoBeneficiary({ id: 4, folio: "INM-004", nombre: "Carlos Hernandez Vega", curp: "HEVC780512HGTNRR04", domicilio: "Blvd. Hidalgo 302", telefono: "4774234567", correo: "carlos.hernandez@example.com", fecha_nacimiento: "1978-05-12", ocupacion: "Chofer", estado_civil: "Casado", ine: "4234567890123", colonia_fraccionamiento: "El Mirador", lote: "3", manzana: "1", superficie: 112, monto_total_credito: 150000, mensualidad: 3000, fecha_inicio: "2026-01-01", fecha_entrega: "2026-01-20", enganche_total: 12000, meses_pagados: 0, meses_atrasados: 5, observaciones_cobranza: "Prioridad de cobranza por cinco atrasos." }),
+  createDemoBeneficiary({ id: 5, folio: "INM-005", nombre: "Lucia Torres Aguilar", curp: "TOAL881108MGTGRL05", domicilio: "Calle Sauce 88", telefono: "4775234567", correo: "lucia.torres@example.com", fecha_nacimiento: "1988-11-08", ocupacion: "Maestra", estado_civil: "Soltera", ine: "5234567890123", colonia_fraccionamiento: "La Esperanza", lote: "14", manzana: "7", superficie: 100, monto_total_credito: 75000, mensualidad: 2500, fecha_inicio: "2025-10-01", fecha_entrega: "2025-10-16", enganche_total: 15000, meses_pagados: 30, meses_atrasados: 0, estatus: "activo", observaciones_generales: "Credito liquidado." }),
+  createDemoBeneficiary({ id: 6, folio: "INM-006", nombre: "Miguel Angel Flores Diaz", curp: "FODM930204HGTLLG06", domicilio: "Circuito Reforma 64", telefono: "4776234567", correo: "miguel.flores@example.com", fecha_nacimiento: "1993-02-04", ocupacion: "Tecnico", estado_civil: "Casado", ine: "6234567890123", colonia_fraccionamiento: "Los Pinos", lote: "6", manzana: "9", superficie: 98, monto_total_credito: 132000, mensualidad: 2750, fecha_inicio: "2026-04-01", fecha_entrega: "2026-04-14", enganche_total: 11000, meses_pagados: 2, meses_atrasados: 2 }),
+  createDemoBeneficiary({ id: 7, folio: "INM-007", nombre: "Patricia Navarro Ruiz", curp: "NARP810930MGTZTR07", domicilio: "Av. Jardin 210", telefono: "4777234567", correo: "patricia.navarro@example.com", fecha_nacimiento: "1981-09-30", ocupacion: "Costurera", estado_civil: "Divorciada", ine: "7234567890123", colonia_fraccionamiento: "Jardines", lote: "19", manzana: "3", superficie: 87, monto_total_credito: 90000, mensualidad: 2000, fecha_inicio: "2026-05-01", fecha_entrega: "2026-05-11", enganche_total: 7000, meses_pagados: 1, meses_atrasados: 0 }),
+  createDemoBeneficiary({ id: 8, folio: "INM-008", nombre: "Roberto Salinas Mora", curp: "SAMR760618HGTLLB08", domicilio: "Cerrada Lago 33", telefono: "4778234567", correo: "roberto.salinas@example.com", fecha_nacimiento: "1976-06-18", ocupacion: "Jubilado", estado_civil: "Viudo", ine: "8234567890123", colonia_fraccionamiento: "Valle Verde", lote: "5", manzana: "11", superficie: 120, monto_total_credito: 160000, mensualidad: 3200, fecha_inicio: "2026-02-01", fecha_entrega: "2026-02-22", enganche_total: 13000, meses_pagados: 3, meses_atrasados: 4, observaciones_cobranza: "Programar visita domiciliaria." }),
+  createDemoBeneficiary({ id: 9, folio: "INM-009", nombre: "Elena Castillo Moreno", curp: "CAME950427MGTLSL09", domicilio: "Calle Palma 59", telefono: "4779234567", correo: "elena.castillo@example.com", fecha_nacimiento: "1995-04-27", ocupacion: "Enfermera", estado_civil: "Soltera", ine: "9234567890123", colonia_fraccionamiento: "Santa Rosa", lote: "22", manzana: "8", superficie: 92, monto_total_credito: 104000, mensualidad: 2600, fecha_inicio: "2026-03-01", fecha_entrega: "2026-03-19", enganche_total: 8500, meses_pagados: 2, meses_atrasados: 1 }),
+  createDemoBeneficiary({ id: 10, folio: "INM-010", nombre: "Fernando Ortega Luna", curp: "OELF840713HGTNRR10", domicilio: "Camino Real 101", telefono: "4771034567", correo: "fernando.ortega@example.com", fecha_nacimiento: "1984-07-13", ocupacion: "Herrero", estado_civil: "Casado", ine: "1034567890123", colonia_fraccionamiento: "La Luz", lote: "10", manzana: "6", superficie: 108, monto_total_credito: 118000, mensualidad: 2400, fecha_inicio: "2026-01-01", fecha_entrega: "2026-01-17", enganche_total: 9500, meses_pagados: 0, meses_atrasados: 0, estatus: "baja", observaciones_generales: "Expediente dado de baja." })
+];
+
 function paymentMonth(value) {
   return String(value || "").slice(5, 7) || "Sin mes";
 }
@@ -64,24 +191,200 @@ function esc(value) {
   })[char]);
 }
 
+function normalizeSearchText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function compactNumber(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? String(Math.round(number * 100) / 100).replace(/\.0+$/, "") : "";
+}
+
+function queryTokens(queryText) {
+  return normalizeSearchText(queryText)
+    .replace(/(\d),(?=\d{3}\b)/g, "$1")
+    .split(/[^a-z0-9.]+/)
+    .filter((token) => token && !["de", "del", "la", "el", "los", "las", "por", "con", "y"].includes(token));
+}
+
+function searchAmount(queryText) {
+  const match = String(queryText || "").match(/\$?\s*\d[\d,]*(?:\.\d{1,2})?/);
+  if (!match) return null;
+  const amount = Number(match[0].replace(/[$,\s]/g, ""));
+  return Number.isFinite(amount) ? Math.round(amount * 100) : null;
+}
+
+function isMoneyToken(token) {
+  return /^\d+(?:\.\d{1,2})?$/.test(token);
+}
+
+function cents(value) {
+  return Math.round(Number(value || 0) * 100);
+}
+
+function debtAmountMatch(row, amount) {
+  const resumen = row.resumen || {};
+  return cents(resumen.saldo_pendiente) === amount || cents(resumen.adeudo_atrasado) === amount;
+}
+
+function isDebtToken(token) {
+  return ["adeudo", "adeudos", "deuda", "deudas", "debe", "deudor", "deudores", "saldo", "pendiente"].includes(token);
+}
+
+function semanticTokenMatch(row, token) {
+  const resumen = row.resumen || {};
+  if (isDebtToken(token)) {
+    return Number(resumen.saldo_pendiente || 0) > 0;
+  }
+  if (["atraso", "atrasos", "atrasado", "atrasados", "vencido", "vencidos"].includes(token)) {
+    return Number(resumen.adeudo_atrasado || 0) > 0 || Number(resumen.mensualidades_atrasadas || 0) > 0;
+  }
+  if (["liquidado", "liquidados", "pagado", "pagados"].includes(token)) {
+    return row.estatus !== "baja" && Number(resumen.saldo_pendiente || 0) <= 0;
+  }
+  if (["baja", "bajas"].includes(token)) {
+    return row.estatus === "baja";
+  }
+  return null;
+}
+
+function searchableBeneficiaryText(row) {
+  const resumen = row.resumen || {};
+  const values = [
+    row.folio,
+    row.nombre,
+    row.curp,
+    row.domicilio,
+    row.telefono,
+    row.correo,
+    row.fecha_nacimiento,
+    row.ocupacion,
+    row.estado_civil,
+    row.ine,
+    row.colonia_fraccionamiento,
+    row.lote,
+    row.manzana,
+    row.concepto,
+    row.estatus,
+    row.observaciones_generales,
+    "mensualidad mensualidades pago pagos",
+    row.monto_total_credito,
+    row.mensualidad,
+    row.enganche_total,
+    resumen.total_pagado,
+    resumen.saldo_pendiente,
+    resumen.adeudo_atrasado,
+    resumen.mensualidad_actual,
+    resumen.mensualidades_totales,
+    resumen.mensualidades_atrasadas,
+    ...(resumen.fechas_atrasadas || [])
+  ];
+  const rawText = values.map((value) => String(value ?? "")).join(" ");
+  const compactAmounts = [
+    row.monto_total_credito,
+    row.mensualidad,
+    row.enganche_total,
+    resumen.total_pagado,
+    resumen.saldo_pendiente,
+    resumen.adeudo_atrasado
+  ].map(compactNumber);
+  return normalizeSearchText(`${rawText} ${compactAmounts.join(" ")}`);
+}
+
+function matchesSearch(row, queryText) {
+  const tokens = queryTokens(queryText);
+  if (!tokens.length) return true;
+  const amount = searchAmount(queryText);
+  const hasDebtSearch = tokens.some(isDebtToken);
+  if (hasDebtSearch && amount !== null && !debtAmountMatch(row, amount)) return false;
+  const text = searchableBeneficiaryText(row);
+  return tokens.every((token) => {
+    if (hasDebtSearch && amount !== null && isMoneyToken(token)) return true;
+    const semanticMatch = semanticTokenMatch(row, token);
+    return semanticMatch === null ? text.includes(token) : semanticMatch;
+  });
+}
+
+function readBody(options) {
+  try {
+    return JSON.parse(options.body || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function demoApi(path, options = {}) {
+  const url = new URL(path, window.location.origin);
+  const method = options.method || "GET";
+  if (url.pathname === "/login" && method === "POST") {
+    const body = readBody(options);
+    if (body.usuario === portal.user && body.password === portal.password) {
+      return {
+        user: {
+          id: 1,
+          usuario: portal.user,
+          nombre: portal.title,
+          rol: portal.role || body.rol || "caja"
+        }
+      };
+    }
+    throw new Error("Usuario o password incorrecto");
+  }
+  if (url.pathname === "/beneficiarios" && method === "GET") {
+    return demoBeneficiaries.filter((row) => matchesSearch(row, url.searchParams.get("q")));
+  }
+  const beneficiaryMatch = url.pathname.match(/^\/beneficiarios\/(\d+)$/);
+  if (beneficiaryMatch && method === "GET") {
+    return demoBeneficiaries.find((row) => row.id === Number(beneficiaryMatch[1]));
+  }
+  if (url.pathname === "/consultas" && method === "POST") return { ok: true };
+  throw new Error("Backend no disponible. Configura Supabase o usa los datos demo para revisar la pantalla.");
+}
+
 async function api(path, options = {}) {
   const base = path === "/login" ? "/api" : API;
-  const response = await fetch(`${base}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options
-  });
-  const data = await response.json();
-  if (!response.ok && response.status === 404 && base !== "/api") {
-    const fallbackResponse = await fetch(`/api${path}`, {
+
+  try {
+    const response = await fetch(`${base}${path}`, {
       headers: { "Content-Type": "application/json" },
       ...options
     });
-    const fallbackData = await fallbackResponse.json();
-    if (!fallbackResponse.ok) throw new Error(fallbackData.message || "Error de comunicacion");
-    return fallbackData;
+    const text = await response.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { message: text };
+    }
+    if (!response.ok && response.status === 404 && base !== "/api") {
+      const fallbackResponse = await fetch(`/api${path}`, {
+        headers: { "Content-Type": "application/json" },
+        ...options
+      });
+      const fallbackText = await fallbackResponse.text();
+      let fallbackData = null;
+      try {
+        fallbackData = fallbackText ? JSON.parse(fallbackText) : {};
+      } catch {
+        fallbackData = { message: fallbackText };
+      }
+      if (!fallbackResponse.ok && fallbackResponse.status === 404) return demoApi(path, options);
+      if (!fallbackResponse.ok) throw new Error(fallbackData.message || "Error de comunicacion");
+      return fallbackData;
+    }
+    if (!response.ok && response.status === 404) return demoApi(path, options);
+    if (!response.ok) throw new Error(data.message || "Error de comunicacion");
+    return data;
+  } catch (error) {
+    const fallbackMode = window.location.protocol === "file:" || window.location.protocol === "about:";
+    if (fallbackMode || error instanceof TypeError) {
+      return demoApi(path, options);
+    }
+    throw error;
   }
-  if (!response.ok) throw new Error(data.message || "Error de comunicacion");
-  return data;
 }
 
 function notify(message) {
@@ -111,10 +414,7 @@ function renderLogin() {
   root.innerHTML = `
     <main class="login">
       <form class="login-box" id="loginForm">
-        <div class="brand">
-          <div class="mark">IN</div>
-          <div><b>INMUVI</b><span>${esc(portal.title)}</span></div>
-        </div>
+        ${brand()}
         <label>Usuario<input name="usuario" value="${esc(portal.user)}" /></label>
         <label>Password<input name="password" type="password" value="${esc(portal.password)}" /></label>
         <p class="error" id="loginError"></p>
@@ -122,7 +422,7 @@ function renderLogin() {
         <div class="demo">
           <span>Acceso de este portal:</span>
           <b>${esc(portal.user)}/${esc(portal.password)}</b>
-          <a href="/">Cambiar de portal</a>
+          <a href="index.html">Cambiar de portal</a>
         </div>
       </form>
     </main>
@@ -268,7 +568,14 @@ function renderProfile(item) {
         ${info("Atrasadas", item.resumen.mensualidades_atrasadas, item.resumen.mensualidades_atrasadas > 0)}
         ${info("Adeudo atrasado", money(item.resumen.adeudo_atrasado), item.resumen.adeudo_atrasado > 0)}
         ${info("Telefono", phone(item.telefono) || "Sin dato")}
+        ${info("CURP", item.curp || "Sin dato")}
+        ${info("Correo", item.correo || "Sin dato")}
+        ${info("Fecha nacimiento", item.fecha_nacimiento ? date(item.fecha_nacimiento) : "Sin dato")}
+        ${info("Ocupacion", item.ocupacion || "Sin dato")}
+        ${info("Estado civil", item.estado_civil || "Sin dato")}
+        ${info("INE", item.ine || "Sin dato")}
       </div>
+      ${item.observaciones_generales ? `<section class="late-dates"><h3>Observaciones generales</h3><p>${esc(item.observaciones_generales)}</p></section>` : ""}
       ${renderLateDates(item)}
       ${renderHistory(item)}
     </article>
@@ -303,9 +610,21 @@ function renderCaja(item) {
       </form>
       <form class="panel" id="editForm">
         <h3>Corregir expediente</h3>
+        <label>Nombre<input name="nombre" value="${esc(item.nombre)}" /></label>
+        <label>CURP<input name="curp" value="${esc(item.curp || "")}" /></label>
         <label>Monto total<input name="monto_total_credito" type="number" step="0.01" min="0" value="${item.monto_total_credito}" /></label>
         <label>Mensualidad<input name="mensualidad" type="number" step="0.01" min="0" value="${item.mensualidad}" /></label>
         <label>Telefono<input name="telefono" type="tel" inputmode="numeric" maxlength="13" value="${esc(phone(item.telefono))}" /></label>
+        <label>Correo<input name="correo" type="email" value="${esc(item.correo || "")}" /></label>
+        <label>Fecha nacimiento<input name="fecha_nacimiento" type="date" value="${esc(item.fecha_nacimiento || "")}" /></label>
+        <label>Ocupacion<input name="ocupacion" value="${esc(item.ocupacion || "")}" /></label>
+        <label>Estado civil<input name="estado_civil" value="${esc(item.estado_civil || "")}" /></label>
+        <label>INE<input name="ine" value="${esc(item.ine || "")}" /></label>
+        <label>Domicilio<input name="domicilio" value="${esc(item.domicilio || "")}" /></label>
+        <label>Colonia/fraccionamiento<input name="colonia_fraccionamiento" value="${esc(item.colonia_fraccionamiento || "")}" /></label>
+        <label>Lote<input name="lote" value="${esc(item.lote || "")}" /></label>
+        <label>Manzana<input name="manzana" value="${esc(item.manzana || "")}" /></label>
+        <label>Observaciones generales<textarea name="observaciones_generales" rows="4">${esc(item.observaciones_generales || "")}</textarea></label>
         <label>Estatus
           <select name="estatus">
             <option value="activo" ${item.estatus === "activo" ? "selected" : ""}>Activo</option>
@@ -329,17 +648,23 @@ function renderCreateSection(expanded = false) {
 }
 
 function renderCreateForm() {
+  const numberFields = ["monto_total_credito", "mensualidad", "enganche_total", "superficie"];
+  const requiredFields = ["folio", "nombre", "monto_total_credito", "mensualidad", "fecha_inicio"];
   return `
     <form class="create-form" id="createForm">
-      ${Object.keys(fields).map((key) => `
+      ${Object.keys(fields).map((key) => key === "observaciones_generales" ? `
+        <label>${key.replaceAll("_", " ")}
+          <textarea name="${key}" rows="4">${esc(fields[key])}</textarea>
+        </label>
+      ` : `
         <label>${key.replaceAll("_", " ")}
           <input
             name="${key}"
-            type="${key === "telefono" ? "tel" : key.includes("fecha") ? "date" : ["monto_total_credito", "mensualidad", "enganche_total", "superficie"].includes(key) ? "number" : "text"}"
+            type="${key === "telefono" ? "tel" : key === "correo" ? "email" : key.includes("fecha") ? "date" : numberFields.includes(key) ? "number" : "text"}"
             value="${esc(fields[key])}"
             ${key === "telefono" ? `inputmode="numeric" maxlength="13"` : ""}
-            ${["monto_total_credito", "mensualidad", "enganche_total", "superficie"].includes(key) ? `step="0.01" min="0"` : ""}
-            ${["folio", "nombre", "monto_total_credito", "mensualidad", "fecha_inicio"].includes(key) ? "required" : ""}
+            ${numberFields.includes(key) ? `step="0.01" min="0"` : ""}
+            ${requiredFields.includes(key) ? "required" : ""}
           />
         </label>
       `).join("")}
@@ -409,10 +734,29 @@ function attachHandlers() {
     render();
   });
 
+  document.querySelectorAll("[data-action='toggle-menu']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.menuHidden = !state.menuHidden;
+      localStorage.setItem("inmuvi-menu-hidden", String(state.menuHidden));
+      render();
+    });
+  });
+
   document.getElementById("searchForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     state.query = event.currentTarget.query.value;
     await loadRows(state.query);
+  });
+
+  document.querySelector("[data-action='clear-search']")?.addEventListener("click", async () => {
+    const searchInput = document.querySelector("#searchForm input[name='query']");
+    if (searchInput) searchInput.value = "";
+    state.query = "";
+    await loadRows("");
+  });
+
+  document.querySelector("#searchForm input[name='query']")?.addEventListener("input", (event) => {
+    document.querySelector("[data-action='clear-search']")?.toggleAttribute("hidden", !event.currentTarget.value.trim());
   });
 
   document.querySelector("[data-action='checkin']")?.addEventListener("click", async () => {
@@ -512,23 +856,34 @@ function render() {
   };
 
   root.innerHTML = `
-    <main class="app-shell">
+    <main class="app-shell ${state.menuHidden ? "menu-hidden" : ""}">
       <aside class="sidebar">
-        <div class="brand"><div class="mark">IN</div><div><b>INMUVI</b><span>${esc(portal.title)}</span></div></div>
-        ${portal.views.includes("consulta") ? `<button data-view="consulta" class="${state.view === "consulta" ? "active" : ""}">Consulta</button>` : ""}
-        ${portal.views.includes("caja") && isCaja ? `<button data-view="caja" class="${state.view === "caja" ? "active" : ""}">Caja</button>` : ""}
-        ${portal.views.includes("cobranza") ? `<button data-view="cobranza" class="${state.view === "cobranza" ? "active" : ""}">Cobranza</button>` : ""}
-        <div class="role"><b>${esc(state.user.nombre)}</b><span>${esc(state.user.rol)}</span></div>
-        <button class="logout" id="logout">Salir</button>
+        <div class="sidebar-menu">
+          <button class="menu-hide" type="button" data-action="toggle-menu">Ocultar menu</button>
+          ${brand()}
+          ${portal.views.includes("consulta") ? `<button data-view="consulta" class="${state.view === "consulta" ? "active" : ""}">Consulta</button>` : ""}
+          ${portal.views.includes("caja") && isCaja ? `<button data-view="caja" class="${state.view === "caja" ? "active" : ""}">Caja</button>` : ""}
+          ${portal.views.includes("cobranza") ? `<button data-view="cobranza" class="${state.view === "cobranza" ? "active" : ""}">Cobranza</button>` : ""}
+        </div>
+        <div class="sidebar-footer">
+          <div class="role"><b>${esc(portal.title)}</b><span>${esc(state.user.rol)}</span></div>
+          <button class="logout" id="logout">Cerrar sesion</button>
+        </div>
       </aside>
       <section class="workspace">
         <header class="topbar">
-          <div>
-            <p>${state.view === "caja" ? "Administracion de caja" : "Consulta institucional"}</p>
-            <h1>${state.view === "cobranza" ? "Seguimiento de cobranza" : "Expedientes y pagos"}</h1>
+          <div class="topbar-title">
+            <button class="menu-logo-toggle" type="button" data-action="toggle-menu" aria-label="Mostrar menu">
+              <img src="inmuvi-logo.svg" alt="" />
+            </button>
+            <div>
+              <p>${state.view === "caja" ? "Administracion de caja" : "Consulta institucional"}</p>
+              <h1>${state.view === "cobranza" ? "Seguimiento de cobranza" : "Expedientes y pagos"}</h1>
+            </div>
           </div>
           <form class="search" id="searchForm">
-            <input name="query" value="${esc(state.query)}" placeholder="Buscar por folio o nombre" />
+            <input name="query" value="${esc(state.query)}" placeholder="Buscar nombre, folio, adeudos o $10,000" />
+            <button class="search-clear" type="button" data-action="clear-search" aria-label="Limpiar busqueda" ${state.query ? "" : "hidden"}>&times;</button>
             <button>Buscar</button>
           </form>
         </header>
