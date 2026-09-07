@@ -1,8 +1,41 @@
 import { enrichBeneficiary, findBeneficiary, listBeneficiaries, readJson, registerConsultation, saveCobranzaObservations, send } from "./utils.js";
 
+function exactValue(value) {
+  return String(value ?? "").trim().toLocaleLowerCase("es-MX");
+}
+
+function minimumValue(searchParams, name) {
+  const rawValue = searchParams.get(name);
+  if (rawValue === null || rawValue.trim() === "") return null;
+  const value = Number(rawValue);
+  return Number.isFinite(value) && value >= 0 ? value : NaN;
+}
+
+export function filterCobranzaBeneficiaries(db, searchParams) {
+  const manzana = exactValue(searchParams.get("manzana"));
+  const lote = exactValue(searchParams.get("lote"));
+  const minMensualidades = minimumValue(searchParams, "min_mensualidades");
+  const minAdeudo = minimumValue(searchParams, "min_adeudo");
+
+  if (Number.isNaN(minMensualidades) || Number.isNaN(minAdeudo)) {
+    return { error: "Los filtros mínimos deben ser números mayores o iguales a cero" };
+  }
+
+  const rows = listBeneficiaries(db, searchParams.get("q")).filter((row) =>
+    (!manzana || exactValue(row.manzana) === manzana) &&
+    (!lote || exactValue(row.lote) === lote) &&
+    (minMensualidades === null || row.resumen.mensualidades_atrasadas >= minMensualidades) &&
+    (minAdeudo === null || row.resumen.adeudo_atrasado >= minAdeudo)
+  );
+
+  return { rows };
+}
+
 export async function handleCobranza(req, res, url, db) {
   if (req.method === "GET" && url.pathname === "/api/cobranza/beneficiarios") {
-    return send(res, 200, listBeneficiaries(db, url.searchParams.get("q")));
+    const result = filterCobranzaBeneficiaries(db, url.searchParams);
+    if (result.error) return send(res, 400, { message: result.error });
+    return send(res, 200, result.rows);
   }
 
   const beneficiaryMatch = url.pathname.match(/^\/api\/cobranza\/beneficiarios\/(\d+)$/);

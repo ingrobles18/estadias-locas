@@ -12,6 +12,12 @@ const state = {
   selected: null,
   query: "",
   menuHidden: localStorage.getItem("inmuvi-menu-hidden") === "true",
+  cobranzaFilters: {
+    manzana: "",
+    lote: "",
+    min_mensualidades: "",
+    min_adeudo: ""
+  },
   view: portal.views[0] || "consulta"
 };
 
@@ -387,17 +393,34 @@ async function api(path, options = {}) {
   }
 }
 
+function handleAction(action) {
+  return async (event) => {
+    try {
+      await action(event);
+    } catch (error) {
+      notify(error.message);
+    }
+  };
+}
+
 function notify(message) {
   const notice = document.createElement("div");
   notice.className = "notice";
+  notice.setAttribute("role", "alert");
   notice.textContent = message;
   document.body.appendChild(notice);
-  setTimeout(() => notice.remove(), 2600);
+  setTimeout(() => notice.remove(), 6000);
 }
 
 async function loadRows(search = state.query) {
   if (!state.user) return;
-  state.rows = await api(`/beneficiarios?q=${encodeURIComponent(search)}`);
+  const params = new URLSearchParams({ q: search });
+  if (state.user.rol === "cobranza") {
+    Object.entries(state.cobranzaFilters).forEach(([key, value]) => {
+      if (String(value).trim() !== "") params.set(key, value);
+    });
+  }
+  state.rows = await api(`/beneficiarios?${params.toString()}`);
   state.selected = state.rows.find((row) => row.id === state.selected?.id) || state.rows[0] || null;
   render();
 }
@@ -467,6 +490,7 @@ function renderLateDates(item) {
 
 function renderList() {
   const canCreate = state.user?.rol === "caja" && state.view === "caja";
+  const isCobranza = state.user?.rol === "cobranza";
   const groups = [
     {
       title: "Personas que deben",
@@ -494,7 +518,11 @@ function renderList() {
           ${row.estatus === "baja" ? `<em>Baja</em>` : isPaid ? `<em class="paid">Liquidado</em>` : ""}
         </b>
         <span>${esc(row.nombre)}</span>
-        <small>${isPaid ? "Pago terminado" : `${money(row.resumen.saldo_pendiente)} pendiente`}</small>
+        ${isCobranza ? `
+          <small>Manzana ${esc(row.manzana || "—")} · Lote ${esc(row.lote || "—")}</small>
+          <small>${money(row.mensualidad)} mensual · ${row.resumen.mensualidades_atrasadas} atrasadas</small>
+          <small>${money(row.resumen.adeudo_atrasado)} de adeudo atrasado</small>
+        ` : `<small>${isPaid ? "Pago terminado" : `${money(row.resumen.saldo_pendiente)} pendiente`}</small>`}
       </button>
     `;
   };
@@ -510,6 +538,29 @@ function renderList() {
         </div>
       `).join("")}
     </section>
+  `;
+}
+
+function renderCobranzaFilters() {
+  const filters = state.cobranzaFilters;
+  return `
+    <form class="cobranza-filters" id="cobranzaFiltersForm">
+      <h3>Filtros de cobranza</h3>
+      <label>Manzana
+        <input name="manzana" value="${esc(filters.manzana)}" placeholder="Ej. 5" />
+      </label>
+      <label>Lote
+        <input name="lote" value="${esc(filters.lote)}" placeholder="Ej. 10" />
+      </label>
+      <label>Mensualidades atrasadas desde
+        <input name="min_mensualidades" type="number" min="0" step="1" value="${esc(filters.min_mensualidades)}" placeholder="Ej. 3" />
+      </label>
+      <label>Adeudo atrasado desde
+        <input name="min_adeudo" type="number" min="0" step="0.01" value="${esc(filters.min_adeudo)}" placeholder="Ej. 10000" />
+      </label>
+      <button>Aplicar filtros</button>
+      <button type="button" class="secondary" data-action="clear-cobranza-filters">Limpiar</button>
+    </form>
   `;
 }
 
@@ -698,7 +749,7 @@ function attachCreateForm() {
     event.currentTarget.value = phone(event.currentTarget.value);
   });
 
-  createForm.addEventListener("submit", async (event) => {
+  createForm.addEventListener("submit", handleAction(async (event) => {
     event.preventDefault();
     const body = Object.fromEntries(new FormData(event.currentTarget));
     const row = await api("/beneficiarios", {
@@ -708,7 +759,7 @@ function attachCreateForm() {
     notify("Beneficiario creado");
     state.selected = row;
     await loadRows("");
-  });
+  }));
 }
 
 function attachHandlers() {
@@ -742,11 +793,11 @@ function attachHandlers() {
     });
   });
 
-  document.getElementById("searchForm")?.addEventListener("submit", async (event) => {
+  document.getElementById("searchForm")?.addEventListener("submit", handleAction(async (event) => {
     event.preventDefault();
     state.query = event.currentTarget.query.value;
     await loadRows(state.query);
-  });
+  }));
 
   document.querySelector("[data-action='clear-search']")?.addEventListener("click", async () => {
     const searchInput = document.querySelector("#searchForm input[name='query']");
@@ -759,7 +810,18 @@ function attachHandlers() {
     document.querySelector("[data-action='clear-search']")?.toggleAttribute("hidden", !event.currentTarget.value.trim());
   });
 
-  document.querySelector("[data-action='checkin']")?.addEventListener("click", async () => {
+  document.getElementById("cobranzaFiltersForm")?.addEventListener("submit", handleAction(async (event) => {
+    event.preventDefault();
+    state.cobranzaFilters = Object.fromEntries(new FormData(event.currentTarget));
+    await loadRows(state.query);
+  }));
+
+  document.querySelector("[data-action='clear-cobranza-filters']")?.addEventListener("click", handleAction(async () => {
+    state.cobranzaFilters = { manzana: "", lote: "", min_mensualidades: "", min_adeudo: "" };
+    await loadRows(state.query);
+  }));
+
+  document.querySelector("[data-action='checkin']")?.addEventListener("click", handleAction(async () => {
     await api("/consultas", {
       method: "POST",
       body: JSON.stringify({
@@ -770,9 +832,9 @@ function attachHandlers() {
       })
     });
     notify("Check-in registrado");
-  });
+  }));
 
-  document.getElementById("paymentForm")?.addEventListener("submit", async (event) => {
+  document.getElementById("paymentForm")?.addEventListener("submit", handleAction(async (event) => {
     event.preventDefault();
     const body = Object.fromEntries(new FormData(event.currentTarget));
     await api("/pagos", {
@@ -781,9 +843,9 @@ function attachHandlers() {
     });
     notify("Abono registrado correctamente");
     await refreshSelected();
-  });
+  }));
 
-  document.getElementById("editForm")?.addEventListener("submit", async (event) => {
+  document.getElementById("editForm")?.addEventListener("submit", handleAction(async (event) => {
     event.preventDefault();
     const body = Object.fromEntries(new FormData(event.currentTarget));
     await api(`/beneficiarios/${state.selected.id}`, {
@@ -792,17 +854,17 @@ function attachHandlers() {
     });
     notify("Expediente actualizado");
     await refreshSelected();
-  });
+  }));
 
-  document.querySelector("[data-action='delete-beneficiary']")?.addEventListener("click", async () => {
+  document.querySelector("[data-action='delete-beneficiary']")?.addEventListener("click", handleAction(async () => {
     if (!window.confirm(`Eliminar a ${state.selected.nombre} y todo su historial de pagos?`)) return;
     await api(`/beneficiarios/${state.selected.id}`, { method: "DELETE" });
     notify("Persona eliminada");
     state.selected = null;
     await loadRows(state.query);
-  });
+  }));
 
-  document.getElementById("cobranzaNotesForm")?.addEventListener("submit", async (event) => {
+  document.getElementById("cobranzaNotesForm")?.addEventListener("submit", handleAction(async (event) => {
     event.preventDefault();
     const body = Object.fromEntries(new FormData(event.currentTarget));
     await api(`/beneficiarios/${state.selected.id}/observaciones`, {
@@ -811,11 +873,16 @@ function attachHandlers() {
     });
     notify("Observaciones guardadas");
     await refreshSelected();
-  });
+  }));
 
   document.querySelectorAll("[data-action='toggle-create']").forEach((button) => button.addEventListener("click", () => {
-    document.getElementById("createHolder").innerHTML = renderCreateForm();
-    attachCreateForm();
+    const holder = document.getElementById("createHolder");
+    if (!document.getElementById("createForm")) {
+      holder.innerHTML = renderCreateForm();
+      attachCreateForm();
+    }
+    holder.scrollIntoView({ behavior: "smooth", block: "start" });
+    holder.querySelector("input")?.focus({ preventScroll: true });
   }));
 
   attachCreateForm();
@@ -887,6 +954,7 @@ function render() {
             <button>Buscar</button>
           </form>
         </header>
+        ${isCobranza ? renderCobranzaFilters() : ""}
         <section class="metrics">
           ${metric("Cartera activa", money(totals.cartera))}
           ${metric("Personas que deben", totals.deudores)}
@@ -910,4 +978,4 @@ function render() {
 }
 
 render();
-if (state.user) loadRows("");
+if (state.user) loadRows("").catch((error) => notify(error.message));

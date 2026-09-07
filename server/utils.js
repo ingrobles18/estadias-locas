@@ -12,11 +12,6 @@ export function formatPhone(value) {
   return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 8)}-${digits.slice(8)}`;
 }
 
-function monthsBetween(startDate, endDate = new Date()) {
-  const start = new Date(`${startDate}T00:00:00`);
-  return Math.max(1, (endDate.getFullYear() - start.getFullYear()) * 12 + endDate.getMonth() - start.getMonth() + 1);
-}
-
 function monthKey(dateText) {
   return String(dateText || "").slice(0, 7);
 }
@@ -25,13 +20,6 @@ function addMonths(dateText, months) {
   const date = new Date(`${dateText}T00:00:00`);
   date.setMonth(date.getMonth() + months);
   return date.toISOString().slice(0, 10);
-}
-
-function latestPaymentDate(pagos) {
-  return pagos.reduce((latest, payment) => {
-    const paymentDate = new Date(`${payment.fecha_pago}T00:00:00`);
-    return paymentDate > latest ? paymentDate : latest;
-  }, new Date());
 }
 
 export function enrichBeneficiary(db, beneficiary) {
@@ -45,7 +33,8 @@ export function enrichBeneficiary(db, beneficiary) {
   const mesesTotales = Number(beneficiary.numero_mensualidades) || (mensualidad > 0 ? Math.ceil(montoTotal / mensualidad) : 0);
   const paymentsByMonth = new Map(pagos.map((payment) => [monthKey(payment.fecha_pago), payment]));
   const paidMonthKeys = new Set(paymentsByMonth.keys());
-  const mesesTranscurridos = monthsBetween(beneficiary.fecha_inicio, latestPaymentDate(pagos));
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
   const progreso = montoTotal > 0 ? Number(((totalPagado / montoTotal) * 100).toFixed(1)) : 0;
   const mensualidades = Array.from({ length: Math.min(mesesTotales, 360) }, (_, index) => {
     const numero = index + 1;
@@ -56,7 +45,7 @@ export function enrichBeneficiary(db, beneficiary) {
       beneficiario_id: beneficiary.id,
       numero_mes: numero,
       monto_esperado: mensualidad,
-      estatus: pagado ? "pagado" : numero <= mesesTranscurridos ? "atrasado" : "pendiente",
+      estatus: pagado ? "pagado" : new Date(`${fechaVencimiento}T00:00:00`) <= today ? "atrasado" : "pendiente",
       fecha_vencimiento: fechaVencimiento,
       pago: paymentsByMonth.get(monthKey(fechaVencimiento)) || null
     };
