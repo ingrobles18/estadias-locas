@@ -78,6 +78,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`INMUVI listo en http://127.0.0.1:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`INMUVI servidor iniciado en el puerto ${PORT}`);
 });

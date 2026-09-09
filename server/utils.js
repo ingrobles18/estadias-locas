@@ -245,7 +245,44 @@ export function findBeneficiary(db, id) {
   return db.beneficiarios.find((row) => row.id === Number(id));
 }
 
+export function findDuplicateBeneficiary(rows, body) {
+  const normalize = (value) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+  const nombre = normalize(body.nombre);
+  const lote = normalize(body.lote);
+  const manzana = normalize(body.manzana);
+  const domicilio = normalize(body.domicilio);
+
+  if (!nombre || !lote || !manzana || !domicilio) return undefined;
+
+  return rows.find((row) => {
+    return normalize(row.nombre) === nombre
+      && normalize(row.lote) === lote
+      && normalize(row.manzana) === manzana
+      && normalize(row.domicilio) === domicilio;
+  });
+}
+
+export function isDuplicateBeneficiaryError(error) {
+  if (!error) return false;
+  const message = String(error.message || "");
+  return error.code === "23505" || /duplicate key|violates unique constraint|beneficiario_unico/i.test(message);
+}
+
+export function duplicateBeneficiaryError() {
+  const error = new Error("Ya existe un beneficiario registrado con los mismos datos.");
+  error.statusCode = 400;
+  return error;
+}
+
 export async function insertBeneficiary(body) {
+  const { data: existingRows, error: duplicateLookupError } = await supabase
+    .from("beneficiarios")
+    .select("nombre, lote, manzana, domicilio");
+  throwDbError(duplicateLookupError, "No se pudo validar beneficiarios duplicados");
+
+  const duplicate = findDuplicateBeneficiary(existingRows || [], body);
+  if (duplicate) throw duplicateBeneficiaryError();
+
   const person = {
     folio: body.folio,
     nombre: body.nombre,
@@ -263,8 +300,15 @@ export async function insertBeneficiary(body) {
     superficie: Number(body.superficie || 0),
     observaciones_generales: body.observaciones_generales || ""
   };
-  const { error: personError } = await supabase.from("beneficiarios").insert(person);
-  throwDbError(personError, "No se pudo crear el beneficiario");
+
+  try {
+    const { error: personError } = await supabase.from("beneficiarios").insert(person);
+    throwDbError(personError, "No se pudo crear el beneficiario");
+  } catch (error) {
+    if (isDuplicateBeneficiaryError(error)) throw duplicateBeneficiaryError();
+    throw error;
+  }
+
   const mensualidad = Number(body.mensualidad || 0);
   const monto = Number(body.monto_total_credito || 0);
   const credit = {

@@ -27,9 +27,20 @@ export async function handleCaja(req, res, url, db) {
   if (req.method === "POST" && url.pathname === "/api/caja/beneficiarios") {
     const body = await readJson(req);
     if (db.beneficiarios.some((row) => row.folio === body.folio)) return send(res, 409, { message: "El folio ya existe" });
-    const id = await insertBeneficiary(body);
-    const freshDb = await readDb();
-    return send(res, 201, enrichBeneficiary(freshDb, findBeneficiary(freshDb, id)));
+
+    try {
+      const id = await insertBeneficiary(body);
+      const freshDb = await readDb();
+      return send(res, 201, enrichBeneficiary(freshDb, findBeneficiary(freshDb, id)));
+    } catch (error) {
+      if (error?.statusCode === 400) {
+        return send(res, 400, { message: "Ya existe un beneficiario registrado con los mismos datos." });
+      }
+      if (error && (error.code === "23505" || /duplicate key|violates unique constraint|beneficiario_unico/i.test(String(error.message)))) {
+        return send(res, 400, { error: "El beneficiario ya existe con esos mismos datos" });
+      }
+      throw error;
+    }
   }
 
   if (beneficiaryMatch && req.method === "PATCH") {
