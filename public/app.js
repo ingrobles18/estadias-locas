@@ -18,6 +18,7 @@ const state = {
   query: "",
   listFilter: "debt",
   listCollapsed: false,
+  createOpen: false,
   menuHidden: localStorage.getItem("inmuvi-menu-hidden") === "true",
   cobranzaFilters: {
     manzana: "",
@@ -755,11 +756,17 @@ function renderCaja(item) {
   `;
 }
 
-function renderCreateSection(expanded = false) {
+function renderCreatePage() {
   return `
-    <section class="create">
-      <button data-action="toggle-create">Nuevo beneficiario</button>
-      <div id="createHolder">${expanded ? renderCreateForm() : ""}</div>
+    <section class="create-page">
+      <div class="create-page-head">
+        <div>
+          <p>Administracion de caja</p>
+          <h2>Nuevo beneficiario</h2>
+        </div>
+        <button class="secondary" type="button" data-action="close-create">Volver a expedientes</button>
+      </div>
+      ${renderCreateForm()}
     </section>
   `;
 }
@@ -824,11 +831,26 @@ function attachCreateForm() {
     });
     notify("Beneficiario creado");
     state.selected = row;
+    state.createOpen = false;
     await loadRows("");
   }));
 }
 
 function attachHandlers() {
+  const topbar = document.querySelector(".topbar");
+  if (topbar) {
+    let previousScrollY = window.scrollY;
+    window.addEventListener("scroll", () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY <= 4 || currentScrollY < previousScrollY - 4) {
+        topbar.classList.remove("is-scrolling-down");
+      } else if (currentScrollY > previousScrollY + 4) {
+        topbar.classList.add("is-scrolling-down");
+      }
+      previousScrollY = currentScrollY;
+    }, { passive: true });
+  }
+
   document.querySelectorAll("[data-action='select']").forEach((button) => {
     button.addEventListener("click", () => {
       state.selected = state.rows.find((row) => row.id === Number(button.dataset.id));
@@ -839,6 +861,7 @@ function attachHandlers() {
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.addEventListener("click", () => {
       state.view = button.dataset.view;
+      state.createOpen = false;
       render();
     });
   });
@@ -976,14 +999,15 @@ function attachHandlers() {
   }));
 
   document.querySelectorAll("[data-action='toggle-create']").forEach((button) => button.addEventListener("click", () => {
-    const holder = document.getElementById("createHolder");
-    if (!document.getElementById("createForm")) {
-      holder.innerHTML = renderCreateForm();
-      attachCreateForm();
-    }
-    holder.scrollIntoView({ behavior: "smooth", block: "start" });
-    holder.querySelector("input")?.focus({ preventScroll: true });
+    state.createOpen = true;
+    render();
+    document.querySelector("#createForm input")?.focus({ preventScroll: true });
   }));
+
+  document.querySelector("[data-action='close-create']")?.addEventListener("click", () => {
+    state.createOpen = false;
+    render();
+  });
 
   attachCreateForm();
 
@@ -1021,6 +1045,7 @@ function render() {
     liquidados: paidRows.length,
     bajas: inactiveRows.length
   };
+  const showCreatePage = isCaja && state.view === "caja" && state.createOpen;
 
   root.innerHTML = `
     <main class="app-shell ${state.menuHidden ? "menu-hidden" : ""}">
@@ -1044,33 +1069,34 @@ function render() {
               <img src="inmuvi-logo.svg" alt="" />
             </button>
             <div>
-              <p>${state.view === "caja" ? "Administracion de caja" : "Consulta institucional"}</p>
-              <h1>${state.view === "cobranza" ? "Seguimiento de cobranza" : "Expedientes y pagos"}</h1>
+              <p>${showCreatePage ? "Administracion de caja" : state.view === "caja" ? "Administracion de caja" : "Consulta institucional"}</p>
+              <h1>${showCreatePage ? "Alta de beneficiario" : state.view === "cobranza" ? "Seguimiento de cobranza" : "Expedientes y pagos"}</h1>
             </div>
           </div>
-          <form class="search" id="searchForm">
+          ${showCreatePage ? "" : `<form class="search" id="searchForm">
             <input name="query" value="${esc(state.query)}" placeholder="Buscar nombre, folio, adeudos o $10,000" />
             <button class="search-clear" type="button" data-action="clear-search" aria-label="Limpiar busqueda" ${state.query ? "" : "hidden"}>&times;</button>
             <button>Buscar</button>
-          </form>
+          </form>`}
         </header>
-        ${isCobranza ? renderCobranzaFilters() : ""}
-        <section class="metrics">
-          ${metric("Cartera activa", money(totals.cartera))}
-          ${metric("Personas que deben", totals.deudores)}
-          ${metric("Liquidados", totals.liquidados)}
-          ${metric("Dados de baja", totals.bajas)}
-        </section>
-        <section class="grid">
-          ${renderList()}
-          <section class="detail">
-            ${state.selected ? renderProfile(state.selected) : `<div class="empty">No hay beneficiarios para mostrar.</div>`}
-            ${state.selected && state.view === "caja" && isCaja ? renderCaja(state.selected) : ""}
-            ${isCaja ? renderCreateSection(!state.selected) : ""}
-            ${state.selected && isCobranza ? renderCobranzaObservations(state.selected) : ""}
-            ${state.selected && state.view === "cobranza" ? renderCobranza(state.selected) : ""}
+        ${showCreatePage ? renderCreatePage() : `
+          ${isCobranza ? renderCobranzaFilters() : ""}
+          <section class="metrics">
+            ${metric("Cartera activa", money(totals.cartera))}
+            ${metric("Personas que deben", totals.deudores)}
+            ${metric("Liquidados", totals.liquidados)}
+            ${metric("Dados de baja", totals.bajas)}
           </section>
-        </section>
+          <section class="grid">
+            ${renderList()}
+            <section class="detail">
+              ${state.selected && state.view === "caja" && isCaja ? renderCaja(state.selected) : ""}
+              ${state.view !== "caja" && state.selected ? renderProfile(state.selected) : state.view !== "caja" ? `<div class="empty">No hay beneficiarios para mostrar.</div>` : ""}
+              ${state.selected && isCobranza ? renderCobranzaObservations(state.selected) : ""}
+              ${state.selected && state.view === "cobranza" ? renderCobranza(state.selected) : ""}
+            </section>
+          </section>
+        `}
       </section>
     </main>
   `;
