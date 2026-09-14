@@ -630,6 +630,27 @@ input, select, textarea { border: 1px solid #cfdbe1; border-radius: 8px; min-hei
     padding-top: 8px;
   }
   .app-shell, .grid { grid-template-columns: 1fr; }
+  .sidebar {
+    display: none;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: min(280px, calc(100vw - 32px));
+    height: 100dvh;
+    overflow-y: auto;
+    box-shadow: 18px 0 34px rgba(10, 25, 32, .24);
+  }
+  .app-shell.mobile-menu-open::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: rgba(15, 39, 50, .36);
+  }
+  .app-shell.mobile-menu-open .sidebar { display: flex; }
+  .app-shell.mobile-menu-open .sidebar-menu { display: grid; }
+  .menu-logo-toggle { display: grid; }
+  .app-shell.mobile-menu-open .menu-logo-toggle { display: none; }
   .topbar, .profile-head { align-items: stretch; flex-direction: column; }
   .topbar-title { align-items: flex-start; }
   .metrics, .info-grid, .actions { grid-template-columns: 1fr; }

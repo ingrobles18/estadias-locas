@@ -19,6 +19,7 @@ const state = {
   listFilter: "debt",
   listCollapsed: false,
   createOpen: false,
+  mobileMenuOpen: false,
   menuHidden: localStorage.getItem("inmuvi-menu-hidden") === "true",
   cobranzaFilters: {
     manzana: "",
@@ -910,6 +911,11 @@ function attachHandlers() {
 
   document.querySelectorAll("[data-action='toggle-menu']").forEach((button) => {
     button.addEventListener("click", () => {
+      if (window.matchMedia("(max-width: 980px)").matches) {
+        state.mobileMenuOpen = !state.mobileMenuOpen;
+        render();
+        return;
+      }
       state.menuHidden = !state.menuHidden;
       localStorage.setItem("inmuvi-menu-hidden", String(state.menuHidden));
       render();
@@ -1048,7 +1054,7 @@ function render() {
   const showCreatePage = isCaja && state.view === "caja" && state.createOpen;
 
   root.innerHTML = `
-    <main class="app-shell ${state.menuHidden ? "menu-hidden" : ""}">
+    <main class="app-shell ${state.menuHidden ? "menu-hidden" : ""} ${state.mobileMenuOpen ? "mobile-menu-open" : ""}">
       <aside class="sidebar">
         <div class="sidebar-menu">
           <button class="menu-hide" type="button" data-action="toggle-menu">Ocultar menu</button>
